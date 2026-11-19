@@ -417,10 +417,7 @@ function runtimeHTML(row, stored) {
     '</section>';
 }
 
-const SQLITE_SNIPPETS = {"conversations": {"first": 63, "last": 64, "code": "value = write[\"value\"]\ndb.execute(\"INSERT INTO conversations VALUES (?, ?)\", (value[\"id\"], json.dumps(value)))"}, "entries": {"first": 66, "last": 70, "code": "value = write[\"value\"]\ndb.execute(\n    \"INSERT INTO entries VALUES (?, ?, ?)\",\n    (value[\"id\"], value[\"conversation_id\"], json.dumps(value)),\n)"}, "tasks": {"first": 72, "last": 76, "code": "value = write[\"value\"]\ndb.execute(\n    \"INSERT OR REPLACE INTO tasks VALUES (?, ?, ?)\",\n    (value[\"id\"], value[\"state\"][\"status\"], json.dumps(value)),\n)"}, "submissions": {"first": 78, "last": 82, "code": "value = write[\"value\"]\ndb.execute(\n    \"INSERT OR REPLACE INTO submissions VALUES (?, ?, ?, ?)\",\n    (value[\"id\"], value[\"conversation_id\"], value.get(\"request_id\"), json.dumps(value)),\n)"}, "documents": {"first": 84, "last": 87, "code": "db.execute(\n    \"INSERT OR REPLACE INTO documents VALUES (?, ?, ?)\",\n    (write[\"kind\"], write[\"key\"], json.dumps(write[\"value\"])),\n)"}, "retire": {"first": 89, "last": 89, "code": "db.execute(\"DELETE FROM documents WHERE key = ?\", (write[\"key\"],))"}};
-
 const STORAGE_TABLES = ["conversations", "submissions", "entries", "tasks", "documents"];
-const STORAGE_SOURCE = "https://github.com/XingLiu0923/pi-durable-py/blob/7051583651d2053aea634a9970b3d3f05fd1b451/pi_durable/storage/sqlite.py";
 const ABSENT = Symbol("absent");
 
 function previewValue(value) {
@@ -481,9 +478,7 @@ function sqliteColumns(item) {
 
 function sqliteDetail(item, previous, beforeCommit) {
   const cleanup = item.n === 2;
-  const source = SQLITE_SNIPPETS[cleanup ? "retire" : STORAGE_TABLES[item.c]];
-  const href = STORAGE_SOURCE + "#L" + source.first + (source.last === source.first ? "" : "-L" + source.last);
-  let columns = "", note;
+  let columns = "", jsonColumn = "", note;
   if (cleanup) {
     const prefix = "@" + item.a.retire;
     const matches = [...beforeCommit.keys()].filter((key) => key.startsWith("doc:") && key.endsWith(prefix));
@@ -498,15 +493,15 @@ function sqliteDetail(item, previous, beforeCommit) {
       return '<dt><code>' + esc(column) + '</code></dt><dd>' +
         fieldValues(Object.is(before, after) ? ABSENT : before, after) + '</dd>';
     }).join("");
-    columns += '<dt><code>json</code></dt><dd>保存整条记录</dd>';
+    jsonColumn = '<details class="sqlite-json" open><summary><code>json</code> · 记录内容（录制节选）</summary>' +
+      '<pre><code>' + pj(item.a) + '</code></pre></details>';
     note = item.c === 3
       ? '整条 Task 存进 <code>json</code>，<code>state.status</code> 也单独写进 <code>status</code> 列，便于按状态查询。'
       : '其余字段随整条记录保存在 <code>json</code> 列中。';
   }
-  return '<section class="sqlite-section"><h4>' + (cleanup ? 'SQLite 删除条件' : 'SQLite 存储列') + '</h4><dl class="field-list">' + columns + '</dl>' +
-    '<p class="tip">' + note + '</p><details class="sqlite-code" open><summary>查看 SQLite 写入代码</summary>' +
-    '<div class="sqlite-code-body"><pre><code>' + esc(source.code) + '</code></pre>' +
-    '<a class="source-link" href="' + href + '">sqlite.py:' + source.first + '</a></div></details></section>';
+  return '<section class="sqlite-section"><h4>' + (cleanup ? 'SQLite 删除条件' : 'SQLite 存储列') + '</h4>' +
+    '<div class="sqlite-columns"><dl class="field-list">' + columns + '</dl>' + jsonColumn + '</div>' +
+    '<p class="tip">' + note + '</p></section>';
 }
 
 function recordHTML(row, state) {
@@ -540,7 +535,7 @@ function recordHTML(row, state) {
     return refButton(doc.key, doc.t + " · " + address + (role ? " · " + role : ""));
   }).join("");
 
-  let record = '<p class="muted">选中一条写入，查看字段和对应的 SQLite 代码。</p>';
+  let record = '<p class="muted">选中一条写入，查看字段变化和存储列。</p>';
   if (item) {
     const writtenAt = selected?.row ?? row.q;
     const beforeCommit = versions[writtenAt - 1];
@@ -554,13 +549,11 @@ function recordHTML(row, state) {
     const related = links.length ? '<div class="relations"><h4>关联字段</h4><div class="ref-list">' +
       links.map(({field,key}) => refButton(key, recordTitle(recordState.get(key).item), field, selectedAt)).join("") +
       '</div></div>' : "";
-    const raw = item.n === 2 ? "" : '<details class="sqlite-code"><summary>查看记录 JSON（录制节选）</summary>' +
-      '<pre><code>' + pj(item.a) + '</code></pre></details>';
     record = '<div class="record-view storage-explanation" tabindex="-1"><div class="record-title"><h4><code>' +
       esc(STORAGE_TABLES[item.c]) + '</code> · ' + esc(action + " " + title) + '</h4>' + earlier + '</div>' +
       (explanation ? '<p class="tip">' + esc(explanation) + '</p>' : '') +
       (item.n === 2 ? "" : recordFields(item, previous)) +
-      sqliteDetail(item, previous, beforeCommit) + related + raw + '</div>';
+      sqliteDetail(item, previous, beforeCommit) + related + '</div>';
   }
   return '<section class="observe-pane storage-pane" aria-label="持久化记录">' +
     '<div class="pane-title"><h3>持久化记录</h3><span>本次提交 · ' + row.x.length + ' 项</span></div>' +

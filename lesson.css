@@ -259,8 +259,9 @@ body { margin: 0; }
 .field-list dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 4px; }
 .field-value { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .field-arrow { color: var(--accent); }
-.sqlite-code { min-width: 0; border-top: 1px solid var(--line); font-size: 12px; padding-top: 5px; }
-.sqlite-code summary { cursor: pointer; color: var(--accent); font-weight: 500; }
-.sqlite-code[open] summary { margin-bottom: 5px; }
-.sqlite-code-body { display: grid; gap: 4px; }
-.sqlite-code .source-link { justify-self: start; font: 11px/1.5 var(--font-mono); }
+.sqlite-columns { min-width: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.sqlite-columns .field-list { border-radius: 0; }
+.sqlite-json { border-top: 1px solid var(--line); background: var(--panel-2); font-size: 11.5px; }
+.sqlite-json summary { cursor: pointer; padding: 4px 6px; }
+.sqlite-json summary code { color: var(--doc); }
+.sqlite-json pre { margin: 0 6px 6px; background: var(--panel); }
