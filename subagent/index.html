@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="主会话通过一个工具把工作交给子会话。两个会话各有自己的输入和回答，任务所有权把它们串在了一起。">
+  <title>子 Agent 怎样接活并把结果传回来 · pi-durable 学习笔记</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+  <link rel="stylesheet" href="../lesson.css">
+  <script defer src="../lesson.js"></script>
+</head>
+<body data-scenario="subagent">
+  <main class="app lesson">
+    <div class="lesson-masthead">
+      <a class="journey-title" href="../"><code>pi-durable</code> 学习笔记</a>
+      <nav class="lesson-nav" aria-label="学习文章"><a href="../">一问一答</a><a href="../tool-call/">调用工具</a><a href="../busy-inbox/">忙时追问</a><a href="../subagent/" aria-current="page">子 Agent</a></nav>
+    </div>
+    <article>
+      <header class="lesson-hero">
+        <p class="lesson-count">场景 4 / 4</p>
+        <h1>子 Agent 怎样接活并把结果传回来</h1>
+        <p class="lesson-summary">主会话通过一个工具把工作交给子会话。两个会话各有自己的输入和回答，任务所有权把它们串在了一起。</p>
+        <div class="lesson-jumps"><a href="#timeline">看时序图 ↓</a><a href="#source">看关键代码 ↓</a></div>
+      </header>
+      <section class="lesson-story" aria-labelledby="story-heading">
+        <h2 id="story-heading">发生了什么</h2>
+        <ol><li><h3>主会话启动工具，工具创建子会话</h3><p><a href="#timeline" data-act="article-step" data-q="5">第 5 次提交</a>把主会话的 generation Task #4 改为 waiting，并创建工具 Task #6。<a href="#timeline" data-act="article-step" data-q="8">第 8 次提交</a>由 #6 创建子会话 #7，写入它自己的 pi.agent，并让 Conversation #7 的 owner 指向 Task #6。</p></li><li><h3>子会话处理自己的 Submission</h3><p><a href="#timeline" data-act="article-step" data-q="9">第 9 次提交</a>在子会话建立 Submission #8、用户 Entry #9 与 generation Task #10。<a href="#timeline" data-act="article-step" data-q="12">第 12 次提交</a>写入子回答 Entry #11，并把 #8 的 answer 设为 #11；此时 #11 仍属于子会话。</p></li><li><h3>工具把子回答带回主会话</h3><p><a href="#timeline" data-act="article-step" data-q="13">第 13 次提交</a>由 Task #6 在主会话写入工具结果 Entry #12。主会话随后开启 Task #13，使用这条工具结果生成最终回答，并在<a href="#timeline" data-act="article-step" data-q="18">第 18 次提交</a>结算主会话的 Submission #2。</p></li></ol>
+      </section>
+      <section class="lesson-timeline" id="timeline" aria-labelledby="timeline-heading">
+        <div class="figure-head">
+          <h2 id="timeline-heading">组件时序图</h2>
+          <div class="seg" aria-label="时序图模式">
+            <button type="button" data-act="mode" data-mode="learn" id="mode-learn">看时序图</button>
+            <button type="button" data-act="mode" data-mode="quiz" id="mode-quiz">做练习</button>
+          </div>
+        </div>
+        <p class="figure-guide">点箭头看当时的运行状态和写入的数据。虚线是组件调用，指向 DB 的实线是一批存储写入。</p>
+        <div id="quiz"></div>
+        <div class="flow-shell">
+          <div id="sequence-scroll" class="sequence-scroll" role="region" aria-label="组件调用及 DB 写入时序" tabindex="0"><div class="sequence-inner" id="seq"></div></div>
+          <div class="sequence-inspector" id="step-detail"></div>
+        </div>
+        <p class="source">数据来自 Python 教学版的一次运行，使用模拟模型和 MemoryStorage。DB 表示存储层。组件调用由代码和写入顺序还原，运行状态只在提交发布时采样。</p>
+      </section>
+      <section class="lesson-source" id="source" aria-labelledby="source-heading">
+        <h2 id="source-heading">将子会话的所有权写入 Conversation</h2>
+        <p>这段代码只记录归属。本例在<a href="#timeline" data-act="article-step" data-q="8">第 8 次提交</a>写入 owner.conversation_id = 1 和 owner.task_id = 6，下一次提交才写子会话的输入和执行任务。</p>
+        <figure class="code-sample">
+          <figcaption><a href="https://github.com/XingLiu0923/pi-durable-py/blob/7051583651d2053aea634a9970b3d3f05fd1b451/pi_durable/session.py#L246-L254">pi_durable/session.py:246</a></figcaption>
+          <pre><code>async def create_conversation(self, owner_task_id: Optional[int] = None,
+                              owner_conversation_id: Optional[int] = None,
+                              id: Optional[int] = None) -&gt; Dict[str, Any]:
+    self._write()
+    record: Dict[str, Any] = {&quot;id&quot;: id if id is not None else await self.mint_id()}
+    if owner_task_id is not None:
+        record[&quot;owner&quot;] = {&quot;conversation_id&quot;: owner_conversation_id, &quot;task_id&quot;: owner_task_id}
+    self._writes.append({&quot;type&quot;: &quot;conversation&quot;, &quot;value&quot;: record})
+    return record</code></pre>
+        </figure>
+      </section>
+      <aside class="lesson-question">
+        <h2>读完想一想</h2><p><a href="#timeline" data-act="article-step" data-q="13">第 13 次提交</a>以后，主会话里的下一次模型请求为什么能读到 Entry #12，却不直接读取子会话的 Entry #11？对照这两条 Entry 的 conversation_id。</p>
+      </aside>
+      <nav class="lesson-footer" aria-label="继续学习"><a class="next-article" href="../"><small>回到第一篇</small><strong>一问一答 →</strong></a></nav>
+    </article>
+  </main>
+</body>
+</html>

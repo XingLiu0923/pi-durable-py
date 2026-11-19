@@ -1,0 +1,661 @@
+const DATA = [{"id":"basic","title":"一问一答","intro":"用户问一句，模型直接回答。可以从第 1 次提交开始，沿着会话、配置、输入、任务和回答一路查看。","rows":[{"q":1,"by":"harness.root()","note":"创建根会话 #1，同时保存它的 Agent 配置 pi.agent（地址 c:1）。配置里的 model 是 fake，生成任务准备请求时会用这个名字查找模型。","x":[{"c":0,"n":1,"t":"#1","s":"根会话","key":"conversation:1","a":{"id":1},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.agent","s":"model fake","key":"doc:pi.agent@c:1","a":{"model":"fake"},"b":null,"cv":1}]},{"q":2,"by":"conversation.submit()：准入","note":"同一次提交写入用户条目 #3、Submission #2（placed）、Task #4（pending），并新建 pi.live 和空的 pi.inbox。pi.live.run.task_id 指向Task #4。","x":[{"c":2,"n":1,"t":"#3 user","s":"“What is the capital of France?”","key":"entry:3","a":{"kind":"pi.user","model":[{"role":"user","content":"What is the capital of France?"}],"id":3,"conversation_id":1},"b":null,"cv":1},{"c":1,"n":1,"t":"#2 input","s":"placed","key":"submission:2","a":{"id":2,"conversation_id":1,"type":"input","status":"placed","entry":3,"request_id":"q-1"},"b":null,"cv":1},{"c":3,"n":1,"t":"#4 generation","s":"pending · prepare","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.live","s":"建立 run 的负责权 → #4","key":"doc:pi.live@c:1","a":{"generation":{"partial":null,"task_id":4},"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":4},"tools":{}},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.inbox","s":"新建（空）","key":"doc:pi.inbox@c:1","a":{"items":[]},"b":null,"cv":1}]},{"q":3,"by":"调度器：领走任务","note":"调度器领走 Task #4：status 从 pending 变成 running。只有这一张卡被改了。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · prepare","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":4,"by":"pi.generation：prepare 阶段","note":"#4 的 prepare 阶段跑完：checkpoint 从 prepare 换成 request，并且记下这次请求用的模型、工具，以及 cutoff=#3（模型只看到条目 #3 为止）。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · request","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":[],"cutoff":3}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":5,"by":"pi.generation：处理模型回复","note":"同一次提交新增回答条目 #5，Submission #2 变成 done 并指向 #5，Task #4 的 state 变成 terminal 并保存 outcome，pi.live.run 清空。","x":[{"c":2,"n":1,"t":"#5 assistant","s":"“Paris.”","key":"entry:5","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"Paris.","tool_calls":[],"stop_reason":"stop"}],"id":5,"conversation_id":1,"by_task_id":4},"b":null,"cv":1},{"c":1,"n":0,"t":"#2 input","s":"placed → done","key":"submission:2","a":{"id":2,"conversation_id":1,"type":"input","status":"done","entry":3,"answer":5,"request_id":"q-1"},"b":{"answer":null,"status":"placed"},"cv":1},{"c":3,"n":0,"t":"#4 generation","s":"terminal · completed","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":5}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":[],"cutoff":3}}},"cv":1},{"c":4,"n":1,"t":"pi.usage","s":"新建","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":8,"output":2,"requests":1}},"tools":{}},"b":null,"cv":1},{"c":4,"n":0,"t":"pi.live","s":"run 清空，会话空闲","key":"doc:pi.live@c:1","a":{"generation":null,"run":null,"tools":{}},"b":{"generation":{"partial":null,"task_id":4},"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":4}},"cv":1},{"c":4,"n":2,"t":"清理 t:4","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:4"},"b":null,"cv":null}]}],"quiz":[{"step":1,"kind":"choice","multi":true,"prompt":"下一步要执行 submit()。它会新增或修改哪些记录？（多选）","options":["新增一条 Entry：用户消息","新增一条 Submission","新增一个 Task：generation","新增一条 Entry：模型的回答","新增文档 pi.live","新增空的文档 pi.inbox"],"answer":[0,1,2,4,5],"reveal":true,"explain":"这批写入共五项。用户消息和 Submission 先记录下来，pi.live 指向负责的任务，pi.inbox 刚创建时是空的。第 5 次提交才写最终回答。"},{"step":2,"kind":"pick","prompt":"请找出：负责回答 Submission #2 的 Task 是哪一个？","answer":"task:4","explain":"Submission 本身不记录谁在负责，这个信息在pi.live.run.task_id 上。后续也可以换一个 Task 来负责这一轮。"},{"step":3,"kind":"choice","prompt":"第 3 步「调度器领走任务」改了哪些记录？","options":["只改了Task #4 的 state（pending → running）","Task #4 和pi.live","Task #4 和 Submission #2","新增了一条条目"],"answer":0,"explain":"预留只改任务记录本身。存储里的 running 是留给下一个进程看的：重开时如果还看到 running，说明上一个进程是在它运行时死掉的。"},{"step":5,"kind":"choice","prompt":"Submission #2 的 answer 字段里存的是什么？","options":["回答的文本","回答所在条目的 ID（#5）","Task #4 的 ID","回答的时间"],"answer":1,"explain":"记录之间只存对方的 ID，不复制内容。要读回答文本，就顺着 answer → 条目 #5 → model 去找。"},{"step":5,"kind":"choice","prompt":"Task #4 结束后，state 中除了 terminal 状态标记还保留什么？","options":["checkpoint 和 outcome 都在","outcome，其中的结果指向条目 #5","整条记录被删除了","只剩 input"],"answer":1,"explain":"终态的 state 里有 status 和 outcome，已经没有 checkpoint。任务记录仍保留 id、kind 等字段。"}],"runtime":[{"seq":1,"live":[],"meta":[],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[]},{"seq":2,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[]},{"seq":3,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[]},{"seq":4,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[]},{"seq":5,"live":[],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[]}]},{"id":"tools","title":"调用工具","intro":"模型先调用一次工具，拿到结果后再回答。重点看 Task 之间的父子关系（owner），以及 Document 上的 run 的负责权是怎么交接的。","rows":[{"q":1,"by":"harness.root()","note":"创建根会话 #1 和它的 pi.agent Document。","x":[{"c":0,"n":1,"t":"#1","s":"根会话","key":"conversation:1","a":{"id":1},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.agent","s":"model fake","key":"doc:pi.agent@c:1","a":{"model":"fake"},"b":null,"cv":1}]},{"q":2,"by":"conversation.submit()：准入","note":"submit()：用户条目 #3、Submission #2（placed）、Task #4（pending）、Document run「#4 负责 #2」。和一问一答完全一样。","x":[{"c":2,"n":1,"t":"#3 user","s":"“Weather in Paris?”","key":"entry:3","a":{"kind":"pi.user","model":[{"role":"user","content":"Weather in Paris?"}],"id":3,"conversation_id":1},"b":null,"cv":1},{"c":1,"n":1,"t":"#2 input","s":"placed","key":"submission:2","a":{"id":2,"conversation_id":1,"type":"input","status":"placed","entry":3,"request_id":"q-1"},"b":null,"cv":1},{"c":3,"n":1,"t":"#4 generation","s":"pending · prepare","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.live","s":"建立 run 的负责权 → #4","key":"doc:pi.live@c:1","a":{"generation":{"partial":null,"task_id":4},"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":4},"tools":{}},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.inbox","s":"新建（空）","key":"doc:pi.inbox@c:1","a":{"items":[]},"b":null,"cv":1}]},{"q":3,"by":"调度器：领走任务","note":"调度器领走 #4：pending → running。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · prepare","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":4,"by":"pi.generation：prepare 阶段","note":"#4 的 prepare 跑完：checkpoint 换成 request，cutoff=#3。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · request","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["get_weather"],"cutoff":3}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":5,"by":"pi.generation：处理模型回复","note":"模型要调用工具。这次提交追加含 tool_calls 的条目 #5，创建工具Task #6，写入工具槽位，并把Task #4 切到 waiting。#4 当前的调用会随后清理，等 #6 完成后再由调度器领走。","x":[{"c":2,"n":1,"t":"#5 assistant","s":"调用 get_weather","key":"entry:5","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"","tool_calls":[{"id":"call_a1","name":"get_weather","arguments":{"city":"Paris"}}],"stop_reason":"tool_use"}],"id":5,"conversation_id":1,"by_task_id":4},"b":null,"cv":1},{"c":3,"n":1,"t":"#6 tool","s":"pending · call","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_a1"},"owner":4,"state":{"status":"pending","checkpoint":{"phase":"call"}}},"b":null,"cv":1},{"c":3,"n":0,"t":"#4 generation","s":"waiting · tools","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"waiting","checkpoint":{"phase":"tools","assistant":5,"tools":[6]},"on":[6],"policy":"allSettled"}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["get_weather"],"cutoff":3}}},"cv":1},{"c":4,"n":1,"t":"pi.usage","s":"新建","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":5,"output":1,"requests":1}},"tools":{}},"b":null,"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 pending","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":4},"tools":{"call_a1":{"name":"get_weather","output":"","status":"pending","task_id":6}}},"b":{"generation":{"partial":null,"task_id":4},"tools":{}},"cv":1}]},{"q":6,"by":"调度器：领走任务","note":"调度器领走工具Task #6：pending → running。","x":[{"c":3,"n":0,"t":"#6 tool","s":"running · call","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_a1"},"owner":4,"state":{"status":"running","checkpoint":{"phase":"call"}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"call"}}},"cv":1}]},{"q":7,"by":"pi.tool：提交意图","note":"#6 先提交「意图」：checkpoint 换成 execute，带上要用的参数；槽位变成 running。这一步之后，才真正执行工具。","x":[{"c":3,"n":0,"t":"#6 tool","s":"running · execute","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_a1"},"owner":4,"state":{"status":"running","checkpoint":{"phase":"execute","arguments":{"city":"Paris"},"replay":"unsafe"}}},"b":{"state":{"status":"running","checkpoint":{"phase":"call"}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 running","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":4},"tools":{"call_a1":{"name":"get_weather","output":"","status":"running","task_id":6}}},"b":{"tools":{"call_a1":{"name":"get_weather","output":"","status":"pending","task_id":6}}},"cv":1}]},{"q":8,"by":"pi.tool：提交结果","note":"工具执行完：追加结果条目 #7（由 #6 写入）；#6 结束，回执里只存 entry_id=7；槽位变成 done。","x":[{"c":2,"n":1,"t":"#7 tool-result","s":"结果：Sunny, 21°C in Paris","key":"entry:7","a":{"kind":"pi.tool-result","model":[{"role":"tool_result","call_id":"call_a1","name":"get_weather","content":"Sunny, 21°C in Paris","is_error":false}],"data":{"duration_ms":0},"id":7,"conversation_id":1,"by_task_id":6},"b":null,"cv":1},{"c":3,"n":0,"t":"#6 tool","s":"terminal · completed","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_a1"},"owner":4,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":7}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"execute","arguments":{"city":"Paris"},"replay":"unsafe"}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 done","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":4},"tools":{"call_a1":{"name":"get_weather","output":"Sunny, 21°C in Paris","status":"done","task_id":6}}},"b":{"tools":{"call_a1":{"name":"get_weather","output":"","status":"running","task_id":6}}},"cv":1},{"c":4,"n":0,"t":"pi.usage","s":"累计用量更新","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":5,"output":1,"requests":1}},"tools":{"get_weather":1}},"b":{"tools":{}},"cv":1},{"c":4,"n":2,"t":"清理 t:6","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:6"},"b":null,"cv":null}]},{"q":9,"by":"调度器：领走任务","note":"#4 等的 #6 已经结束，调度器把 #4 重新领走：waiting → running，进入 tools 阶段。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · tools","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"tools","assistant":5,"tools":[6]}}},"b":{"state":{"status":"waiting","checkpoint":{"phase":"tools","assistant":5,"tools":[6]},"on":[6],"policy":"allSettled"}},"cv":1}]},{"q":10,"by":"pi.generation：tools 阶段","note":"#4 的 tools 阶段：新建 Task #8（下一个 generation），把 Document 上的 run 的负责权从 #4 交给 #8；#4 结束。Submission #2 一直没变，它还在等最终回答。","x":[{"c":3,"n":1,"t":"#8 generation","s":"pending · prepare","key":"task:8","a":{"id":8,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":1},{"c":3,"n":0,"t":"#4 generation","s":"terminal · completed","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":5}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"tools","assistant":5,"tools":[6]}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"run 的负责权 #4 → #8","key":"doc:pi.live@c:1","a":{"generation":{"partial":null,"task_id":8},"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":8},"tools":{}},"b":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":4},"tools":{"call_a1":{"name":"get_weather","output":"Sunny, 21°C in Paris","status":"done","task_id":6}}},"cv":1},{"c":4,"n":2,"t":"清理 t:4","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:4"},"b":null,"cv":null}]},{"q":11,"by":"调度器：领走任务","note":"调度器领走 #8。","x":[{"c":3,"n":0,"t":"#8 generation","s":"running · prepare","key":"task:8","a":{"id":8,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":12,"by":"pi.generation：prepare 阶段","note":"#8 的 prepare：cutoff=#7，这次请求能看到工具结果。","x":[{"c":3,"n":0,"t":"#8 generation","s":"running · request","key":"task:8","a":{"id":8,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["get_weather"],"cutoff":7}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":13,"by":"pi.generation：处理模型回复","note":"模型给出最终回答：条目 #9；Submission #2 变成 done，answer=#9；Document run 清空，会话空闲；#8 结束。","x":[{"c":2,"n":1,"t":"#9 assistant","s":"“It is sunny and 21°C in Paris.”","key":"entry:9","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"It is sunny and 21°C in Paris.","tool_calls":[],"stop_reason":"stop"}],"id":9,"conversation_id":1,"by_task_id":8},"b":null,"cv":1},{"c":1,"n":0,"t":"#2 input","s":"placed → done","key":"submission:2","a":{"id":2,"conversation_id":1,"type":"input","status":"done","entry":3,"answer":9,"request_id":"q-1"},"b":{"answer":null,"status":"placed"},"cv":1},{"c":3,"n":0,"t":"#8 generation","s":"terminal · completed","key":"task:8","a":{"id":8,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":9}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["get_weather"],"cutoff":7}}},"cv":1},{"c":4,"n":0,"t":"pi.usage","s":"累计用量更新","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":15,"output":9,"requests":2}},"tools":{"get_weather":1}},"b":{"models":{"fake":{"input":5,"output":1,"requests":1}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"run 清空，会话空闲","key":"doc:pi.live@c:1","a":{"generation":null,"run":null,"tools":{}},"b":{"generation":{"partial":null,"task_id":8},"run":{"inputs":[{"entry":3,"id":2,"request_id":"q-1"}],"task_id":8}},"cv":1},{"c":4,"n":2,"t":"清理 t:8","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:8"},"b":null,"cv":null}]}],"quiz":[{"step":5,"kind":"pick","prompt":"请找出：工具Task #6 的父任务（owner）。","answer":"task:4","explain":"#6 的 owner 字段是 4。工具任务属于发起调用的那个 generation，所以中止 #4 时会连带中止 #6。"},{"step":5,"kind":"choice","prompt":"此刻Task #4 处于什么状态？","options":["running：一直在等工具返回","waiting：等 #6 结束后才会被重新领走","terminal：已经结束了","pending：还没开始"],"answer":1,"explain":"等待依赖的状态已写入记录，on=[6]。上一调用完成清理后，#4 由调度器等 #6 结束再重新领走。"},{"step":7,"kind":"choice","prompt":"工具Task #6 的 checkpoint 从 call 变成了 execute。这时工具已经执行了吗？","options":["已经执行完了","还没有。这是先提交的「意图」，提交之后才执行","不会执行"],"answer":1,"explain":"先写入执行意图，再执行，最后提交结果。如果进程死在中间，重开时看到 execute 阶段，就知道「工具可能执行过」。"},{"step":8,"kind":"pick","prompt":"请找出：工具调用 call_a1 的结果存在哪条记录里？","answer":"entry:7","explain":"结果是对话记录里的条目 #7（pi.tool-result），它的消息用 call_id 对应到条目 #5 里的调用。Task #6 的回执也指向它。"},{"step":9,"kind":"choice","reveal":true,"prompt":"下一步（tools 阶段）之后，pi.live.run.task_id 会是多少？","options":["4","6","8，一个新的 generation","null，会话变空闲"],"answer":2,"explain":"这次工具轮结束后，#4 新建 #8 处理下一次模型生成，并把负责权交给它；输入（Submission #2）原样跟着走。"},{"step":13,"kind":"choice","prompt":"从头到尾，Submission #2 经历了哪些状态？","options":["queued → placed → done","placed → done","placed → running → done","pending → done"],"answer":1,"explain":"会话空闲时提交，会直接放进对话（placed），跳过 queued。Submission 没有 running 状态：running 是任务的状态，不是 Submission 的。"}],"runtime":[{"seq":1,"live":[],"meta":[],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":2,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":3,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":4,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":5,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"pending","phase":"call"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":6,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"call"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":7,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":8,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":7}}}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":9,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"tools"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":7}}}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":10,"live":[{"id":8,"kind":"pi.generation","conversation_id":1,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":7}}},{"id":8,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":11,"live":[{"id":8,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":7}}},{"id":8,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":12,"live":[{"id":8,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":7}}},{"id":8,"owner":null,"outcome":null}],"invocations":[{"task_id":8,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]},{"seq":13,"live":[],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":7}}},{"id":8,"owner":null,"outcome":{"status":"completed","result":{"entry_id":9}}}],"invocations":[{"task_id":8,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"weather","tools":["get_weather"]}]}]},{"id":"inbox","title":"忙时追问","intro":"工具还在跑的时候，用户又发了两条消息，还有人发了一条聊天提示。重点看 pi.inbox 排队区，以及 Submission 的 queued 状态。","rows":[{"q":1,"by":"harness.root()","note":"创建根会话 #1。","x":[{"c":0,"n":1,"t":"#1","s":"根会话","key":"conversation:1","a":{"id":1},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.agent","s":"model fake","key":"doc:pi.agent@c:1","a":{"model":"fake"},"b":null,"cv":1}]},{"q":2,"by":"conversation.submit()：准入","note":"submit「Run the build」：会话空闲，直接 placed。用户条目 #3、Submission #2、Task #4、Document run「#4 负责 #2」。","x":[{"c":2,"n":1,"t":"#3 user","s":"“Run the build”","key":"entry:3","a":{"kind":"pi.user","model":[{"role":"user","content":"Run the build"}],"id":3,"conversation_id":1},"b":null,"cv":1},{"c":1,"n":1,"t":"#2 input","s":"placed","key":"submission:2","a":{"id":2,"conversation_id":1,"type":"input","status":"placed","entry":3},"b":null,"cv":1},{"c":3,"n":1,"t":"#4 generation","s":"pending · prepare","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.live","s":"建立 run 的负责权 → #4","key":"doc:pi.live@c:1","a":{"generation":{"partial":null,"task_id":4},"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{}},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.inbox","s":"新建（空）","key":"doc:pi.inbox@c:1","a":{"items":[]},"b":null,"cv":1}]},{"q":3,"by":"调度器：领走任务","note":"调度器领走 #4。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · prepare","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":4,"by":"pi.generation：prepare 阶段","note":"#4 的 prepare 跑完。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · request","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["build"],"cutoff":3}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":5,"by":"pi.generation：处理模型回复","note":"模型调用 build 工具：条目 #5、Task #6（owner=#4），#4 进入 waiting。","x":[{"c":2,"n":1,"t":"#5 assistant","s":"调用 build","key":"entry:5","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"","tool_calls":[{"id":"call_b1","name":"build","arguments":{"tool":"npm"}}],"stop_reason":"tool_use"}],"id":5,"conversation_id":1,"by_task_id":4},"b":null,"cv":1},{"c":3,"n":1,"t":"#6 tool","s":"pending · call","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_b1"},"owner":4,"state":{"status":"pending","checkpoint":{"phase":"call"}}},"b":null,"cv":1},{"c":3,"n":0,"t":"#4 generation","s":"waiting · tools","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"waiting","checkpoint":{"phase":"tools","assistant":5,"tools":[6]},"on":[6],"policy":"allSettled"}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["build"],"cutoff":3}}},"cv":1},{"c":4,"n":1,"t":"pi.usage","s":"新建","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":4,"output":1,"requests":1}},"tools":{}},"b":null,"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 pending","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{"call_b1":{"name":"build","output":"","status":"pending","task_id":6}}},"b":{"generation":{"partial":null,"task_id":4},"tools":{}},"cv":1}]},{"q":6,"by":"调度器：领走任务","note":"调度器领走 #6。","x":[{"c":3,"n":0,"t":"#6 tool","s":"running · call","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_b1"},"owner":4,"state":{"status":"running","checkpoint":{"phase":"call"}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"call"}}},"cv":1}]},{"q":7,"by":"pi.tool：提交意图","note":"#6 写入执行意图，开始执行 build（大约 0.3 秒）。此时会话是「忙」：Document run 不为空。","x":[{"c":3,"n":0,"t":"#6 tool","s":"running · execute","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_b1"},"owner":4,"state":{"status":"running","checkpoint":{"phase":"execute","arguments":{"tool":"npm"},"replay":"unsafe"}}},"b":{"state":{"status":"running","checkpoint":{"phase":"call"}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 running","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{"call_b1":{"name":"build","output":"","status":"running","task_id":6}}},"b":{"tools":{"call_b1":{"name":"build","output":"","status":"pending","task_id":6}}},"cv":1}]},{"q":8,"by":"conversation.submit()：准入","note":"用户发了 steer「Use pnpm, not npm」。会话忙，所以只新建 Submission #7（queued），放进 pi.inbox 排队，对话记录里没有新条目。","x":[{"c":1,"n":1,"t":"#7 input","s":"queued","key":"submission:7","a":{"id":7,"conversation_id":1,"type":"input","status":"queued"},"b":null,"cv":1},{"c":4,"n":0,"t":"pi.inbox","s":"排队 +#7 steer","key":"doc:pi.inbox@c:1","a":{"items":[{"content":"Use pnpm, not npm","entry":null,"id":7,"mode":"steer","request_id":null}]},"b":{"items":[]},"cv":1}]},{"q":9,"by":"conversation.submit()：准入","note":"用户又发了 followUp「Also run the tests」：同样排队，Submission #8 queued。inbox 里现在有两项。","x":[{"c":1,"n":1,"t":"#8 input","s":"queued","key":"submission:8","a":{"id":8,"conversation_id":1,"type":"input","status":"queued"},"b":null,"cv":1},{"c":4,"n":0,"t":"pi.inbox","s":"排队 +#8 followUp","key":"doc:pi.inbox@c:1","a":{"items":[{"content":"Use pnpm, not npm","entry":null,"id":7,"mode":"steer","request_id":null},{"content":"Also run the tests","entry":null,"id":8,"mode":"followUp","request_id":null}]},"b":{"items":[{"content":"Use pnpm, not npm","entry":null,"id":7,"mode":"steer","request_id":null}]},"cv":1}]},{"q":10,"by":"conversation.submit()：准入","note":"有人写入一条 chat.note（write 提交）。它只有 kind 和 data、没有 model，模型看不到，所以不必排队：直接追加条目 #10，Submission #9 立刻 done。它插在工具调用 #5 和工具结果之间。","x":[{"c":2,"n":1,"t":"#10 chat.note","s":"Ann joined the chat","key":"entry:10","a":{"kind":"chat.note","data":"Ann joined the chat","id":10,"conversation_id":1},"b":null,"cv":1},{"c":1,"n":1,"t":"#9 write","s":"done","key":"submission:9","a":{"id":9,"conversation_id":1,"type":"write","status":"done","entry":10},"b":null,"cv":1}]},{"q":11,"by":"pi.tool：提交结果","note":"build 跑完：结果条目 #11，#6 结束。","x":[{"c":2,"n":1,"t":"#11 tool-result","s":"结果：build ok","key":"entry:11","a":{"kind":"pi.tool-result","model":[{"role":"tool_result","call_id":"call_b1","name":"build","content":"build ok","is_error":false}],"data":{"duration_ms":301},"id":11,"conversation_id":1,"by_task_id":6},"b":null,"cv":1},{"c":3,"n":0,"t":"#6 tool","s":"terminal · completed","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_b1"},"owner":4,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":11}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"execute","arguments":{"tool":"npm"},"replay":"unsafe"}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 done","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{"call_b1":{"name":"build","output":"build ok","status":"done","task_id":6}}},"b":{"tools":{"call_b1":{"name":"build","output":"","status":"running","task_id":6}}},"cv":1},{"c":4,"n":0,"t":"pi.usage","s":"累计用量更新","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":4,"output":1,"requests":1}},"tools":{"build":1}},"b":{"tools":{}},"cv":1},{"c":4,"n":2,"t":"清理 t:6","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:6"},"b":null,"cv":null}]},{"q":12,"by":"调度器：领走任务","note":"调度器把 #4 领走，进入 tools 阶段。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · tools","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"tools","assistant":5,"tools":[6]}}},"b":{"state":{"status":"waiting","checkpoint":{"phase":"tools","assistant":5,"tools":[6]},"on":[6],"policy":"allSettled"}},"cv":1}]},{"q":13,"by":"pi.generation：tools 阶段","note":"tools 阶段到了 postTools 边界，只放置 steer：追加用户条目 #12，Submission #7 变成 placed，并加入当前 run（inputs=[2, 7]）。新 Task #13 接过 run 的负责权。followUp #8 还留在 inbox 里。","x":[{"c":2,"n":1,"t":"#12 user","s":"“Use pnpm, not npm”","key":"entry:12","a":{"kind":"pi.user","model":[{"role":"user","content":"Use pnpm, not npm"}],"id":12,"conversation_id":1,"by_task_id":4},"b":null,"cv":1},{"c":1,"n":0,"t":"#7 input","s":"queued → placed","key":"submission:7","a":{"id":7,"conversation_id":1,"type":"input","status":"placed","entry":12},"b":{"entry":null,"status":"queued"},"cv":1},{"c":3,"n":1,"t":"#13 generation","s":"pending · prepare","key":"task:13","a":{"id":13,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":1},{"c":3,"n":0,"t":"#4 generation","s":"terminal · completed","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":5}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"tools","assistant":5,"tools":[6]}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"run 的负责权 #4 → #13","key":"doc:pi.live@c:1","a":{"generation":{"partial":null,"task_id":13},"run":{"inputs":[{"entry":3,"id":2,"request_id":null},{"entry":12,"id":7,"request_id":null}],"task_id":13},"tools":{}},"b":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{"call_b1":{"name":"build","output":"build ok","status":"done","task_id":6}}},"cv":1},{"c":4,"n":0,"t":"pi.inbox","s":"取出 #7","key":"doc:pi.inbox@c:1","a":{"items":[{"content":"Also run the tests","entry":null,"id":8,"mode":"followUp","request_id":null}]},"b":{"items":[{"content":"Use pnpm, not npm","entry":null,"id":7,"mode":"steer","request_id":null},{"content":"Also run the tests","entry":null,"id":8,"mode":"followUp","request_id":null}]},"cv":1},{"c":4,"n":2,"t":"清理 t:4","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:4"},"b":null,"cv":null}]},{"q":14,"by":"调度器：领走任务","note":"调度器领走 #13。","x":[{"c":3,"n":0,"t":"#13 generation","s":"running · prepare","key":"task:13","a":{"id":13,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":15,"by":"pi.generation：prepare 阶段","note":"#13 的 prepare：cutoff=#12，这次请求能看到 steer 那句话。","x":[{"c":3,"n":0,"t":"#13 generation","s":"running · request","key":"task:13","a":{"id":13,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["build"],"cutoff":12}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":16,"by":"pi.generation：处理模型回复","note":"回答条目 #14 同时回应了 build 和 pnpm，所以 Submission #2、#7 都变成 done（它们在同一个 run 里）。接着到了 final 边界，放置 followUp：用户条目 #15，Submission #8 placed，开启新的 run（Task #16），inbox 清空。","x":[{"c":2,"n":1,"t":"#14 assistant","s":"“Build passed. I'll use pnpm from now on.”","key":"entry:14","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"Build passed. I'll use pnpm from now on.","tool_calls":[],"stop_reason":"stop"}],"id":14,"conversation_id":1,"by_task_id":13},"b":null,"cv":1},{"c":1,"n":0,"t":"#2 input","s":"placed → done","key":"submission:2","a":{"id":2,"conversation_id":1,"type":"input","status":"done","entry":3,"answer":14},"b":{"answer":null,"status":"placed"},"cv":1},{"c":1,"n":0,"t":"#7 input","s":"placed → done","key":"submission:7","a":{"id":7,"conversation_id":1,"type":"input","status":"done","entry":12,"answer":14},"b":{"answer":null,"status":"placed"},"cv":1},{"c":2,"n":1,"t":"#15 user","s":"“Also run the tests”","key":"entry:15","a":{"kind":"pi.user","model":[{"role":"user","content":"Also run the tests"}],"id":15,"conversation_id":1,"by_task_id":13},"b":null,"cv":1},{"c":1,"n":0,"t":"#8 input","s":"queued → placed","key":"submission:8","a":{"id":8,"conversation_id":1,"type":"input","status":"placed","entry":15},"b":{"entry":null,"status":"queued"},"cv":1},{"c":3,"n":1,"t":"#16 generation","s":"pending · prepare","key":"task:16","a":{"id":16,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":1},{"c":3,"n":0,"t":"#13 generation","s":"terminal · completed","key":"task:13","a":{"id":13,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":14}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["build"],"cutoff":12}}},"cv":1},{"c":4,"n":0,"t":"pi.usage","s":"累计用量更新","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":14,"output":12,"requests":2}},"tools":{"build":1}},"b":{"models":{"fake":{"input":4,"output":1,"requests":1}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"run 的负责权 #13 → #16","key":"doc:pi.live@c:1","a":{"generation":{"partial":null,"task_id":16},"run":{"inputs":[{"entry":15,"id":8,"request_id":null}],"task_id":16},"tools":{}},"b":{"generation":{"partial":null,"task_id":13},"run":{"inputs":[{"entry":3,"id":2,"request_id":null},{"entry":12,"id":7,"request_id":null}],"task_id":13}},"cv":1},{"c":4,"n":0,"t":"pi.inbox","s":"取出 #8","key":"doc:pi.inbox@c:1","a":{"items":[]},"b":{"items":[{"content":"Also run the tests","entry":null,"id":8,"mode":"followUp","request_id":null}]},"cv":1},{"c":4,"n":2,"t":"清理 t:13","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:13"},"b":null,"cv":null}]},{"q":17,"by":"调度器：领走任务","note":"调度器领走 #16。","x":[{"c":3,"n":0,"t":"#16 generation","s":"running · prepare","key":"task:16","a":{"id":16,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":18,"by":"pi.generation：prepare 阶段","note":"#16 的 prepare。","x":[{"c":3,"n":0,"t":"#16 generation","s":"running · request","key":"task:16","a":{"id":16,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["build"],"cutoff":15}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":19,"by":"pi.generation：处理模型回复","note":"回答条目 #17：Submission #8 done；Document run 清空，会话空闲。","x":[{"c":2,"n":1,"t":"#17 assistant","s":"“Tests passed.”","key":"entry:17","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"Tests passed.","tool_calls":[],"stop_reason":"stop"}],"id":17,"conversation_id":1,"by_task_id":16},"b":null,"cv":1},{"c":1,"n":0,"t":"#8 input","s":"placed → done","key":"submission:8","a":{"id":8,"conversation_id":1,"type":"input","status":"done","entry":15,"answer":17},"b":{"answer":null,"status":"placed"},"cv":1},{"c":3,"n":0,"t":"#16 generation","s":"terminal · completed","key":"task:16","a":{"id":16,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":17}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["build"],"cutoff":15}}},"cv":1},{"c":4,"n":0,"t":"pi.usage","s":"累计用量更新","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":39,"output":16,"requests":3}},"tools":{"build":1}},"b":{"models":{"fake":{"input":14,"output":12,"requests":2}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"run 清空，会话空闲","key":"doc:pi.live@c:1","a":{"generation":null,"run":null,"tools":{}},"b":{"generation":{"partial":null,"task_id":16},"run":{"inputs":[{"entry":15,"id":8,"request_id":null}],"task_id":16}},"cv":1},{"c":4,"n":2,"t":"清理 t:16","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:16"},"b":null,"cv":null}]}],"quiz":[{"step":7,"kind":"choice","reveal":true,"prompt":"这时用户发了一条 steer 消息「Use pnpm」。下一步会怎样？","options":["立刻追加一条用户条目","新建一张 queued Submission，放进 pi.inbox 排队","被拒绝，抛出 ConversationBusy","打断正在执行的工具"],"answer":1,"explain":"会话忙时，输入先排队。只有 when_busy=\"reject\" 才会被拒绝。steer 会在当前工具轮结束时插进对话。"},{"step":10,"kind":"choice","prompt":"第 10 步的 chat.note 也是一次提交，为什么它没有排队，而是直接写进了对话记录？","options":["所有 write 提交都不排队","它只有 kind 和 data、没有 model，模型看不到，什么时候插入都不影响对话","因为它是最后提交的","因为它的 request_id 不同"],"answer":1,"explain":"本例中的 chat.note 只用于展示，可直接追加。在有待处理的 reset 等情况下，某些写入也会排队。"},{"step":12,"kind":"choice","reveal":true,"prompt":"下一步是 tools 阶段（postTools 边界）。它会把哪些排队项放进对话？","options":["只有 steer Submission #7","只有 followUp Submission #8","#7 和 #8 都放","都不放"],"answer":0,"explain":"本例在 postTools 边界接入 steer。followUp 在当前 run 回答后的 final 边界进入对话。"},{"step":13,"kind":"pick","prompt":"请找出：当前 run 要回答的第二张 Submission。","answer":"submission:7","explain":"pi.live.run.inputs 现在是 [2, 7]。steer 加入了正在进行的 run，所以最后一个回答会同时回应这两张 Submission。"},{"step":16,"kind":"choice","prompt":"第 16 步之后，哪些 Submission 变成了 done？","options":["只有 #2","#2 和 #7","#2、#7 和 #8","只有 #7"],"answer":1,"explain":"#2 和 #7 在同一个 run 里，回答 #14 一次 settle 它们两个。#8 刚刚被放进对话（placed），属于下一个 run。"},{"step":18,"kind":"choice","prompt":"followUp Submission #8 是在哪一步被放进对话的？","options":["第 13 步，和 steer 一起","第 16 步，上一个 run 回答之后开启了新的 run","第 9 步，提交的时候","第 19 步"],"answer":1,"explain":"followUp 在 final 边界放置：上一个 run 回答完，同一次提交里追加用户条目 #15、Submission #8 placed、新建 Task #16。"}],"runtime":[{"seq":1,"live":[],"meta":[],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":2,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":3,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":4,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":5,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"pending","phase":"call"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":6,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"call"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":7,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":8,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":9,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":10,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":11,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":12,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"tools"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":13,"live":[{"id":13,"kind":"pi.generation","conversation_id":1,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":14,"live":[{"id":13,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":15,"live":[{"id":13,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":null}],"invocations":[{"task_id":13,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":16,"live":[{"id":16,"kind":"pi.generation","conversation_id":1,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":{"status":"completed","result":{"entry_id":14}}},{"id":16,"owner":null,"outcome":null}],"invocations":[{"task_id":13,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":17,"live":[{"id":16,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":{"status":"completed","result":{"entry_id":14}}},{"id":16,"owner":null,"outcome":null}],"invocations":[{"task_id":13,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":18,"live":[{"id":16,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":{"status":"completed","result":{"entry_id":14}}},{"id":16,"owner":null,"outcome":null}],"invocations":[{"task_id":16,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]},{"seq":19,"live":[],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":{"status":"completed","result":{"entry_id":14}}},{"id":16,"owner":null,"outcome":{"status":"completed","result":{"entry_id":17}}}],"invocations":[{"task_id":16,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"ci","tools":["build"]}]}]},{"id":"subagent","title":"子 agent","intro":"主会话的模型调用 subagent 工具，工具新建一个子会话，向它提问并等待回答。重点看会话的 owner，以及任务树怎样穿过会话。","rows":[{"q":1,"by":"harness.root()","note":"创建根会话 #1。","x":[{"c":0,"n":1,"t":"#1","s":"根会话","key":"conversation:1","a":{"id":1},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.agent","s":"model fake","key":"doc:pi.agent@c:1","a":{"model":"fake"},"b":null,"cv":1}]},{"q":2,"by":"conversation.submit()：准入","note":"submit：用户条目 #3、Submission #2、Task #4、Document run。","x":[{"c":2,"n":1,"t":"#3 user","s":"“Ask a helper about the weather in Paris”","key":"entry:3","a":{"kind":"pi.user","model":[{"role":"user","content":"Ask a helper about the weather in Paris"}],"id":3,"conversation_id":1},"b":null,"cv":1},{"c":1,"n":1,"t":"#2 input","s":"placed","key":"submission:2","a":{"id":2,"conversation_id":1,"type":"input","status":"placed","entry":3},"b":null,"cv":1},{"c":3,"n":1,"t":"#4 generation","s":"pending · prepare","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.live","s":"建立 run 的负责权 → #4","key":"doc:pi.live@c:1","a":{"generation":{"partial":null,"task_id":4},"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{}},"b":null,"cv":1},{"c":4,"n":1,"t":"pi.inbox","s":"新建（空）","key":"doc:pi.inbox@c:1","a":{"items":[]},"b":null,"cv":1}]},{"q":3,"by":"调度器：领走任务","note":"调度器领走 #4。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · prepare","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":4,"by":"pi.generation：prepare 阶段","note":"#4 的 prepare 跑完。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · request","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["subagent"],"cutoff":3}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":5,"by":"pi.generation：处理模型回复","note":"模型调用 subagent 工具：条目 #5、Task #6（owner=#4），#4 进入 waiting。","x":[{"c":2,"n":1,"t":"#5 assistant","s":"调用 subagent","key":"entry:5","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"","tool_calls":[{"id":"call_s1","name":"subagent","arguments":{"task":"Find the weather in Paris"}}],"stop_reason":"tool_use"}],"id":5,"conversation_id":1,"by_task_id":4},"b":null,"cv":1},{"c":3,"n":1,"t":"#6 tool","s":"pending · call","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_s1"},"owner":4,"state":{"status":"pending","checkpoint":{"phase":"call"}}},"b":null,"cv":1},{"c":3,"n":0,"t":"#4 generation","s":"waiting · tools","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"waiting","checkpoint":{"phase":"tools","assistant":5,"tools":[6]},"on":[6],"policy":"allSettled"}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["subagent"],"cutoff":3}}},"cv":1},{"c":4,"n":1,"t":"pi.usage","s":"新建","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":10,"output":1,"requests":1}},"tools":{}},"b":null,"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 pending","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{"call_s1":{"name":"subagent","output":"","status":"pending","task_id":6}}},"b":{"generation":{"partial":null,"task_id":4},"tools":{}},"cv":1}]},{"q":6,"by":"调度器：领走任务","note":"调度器领走 #6。","x":[{"c":3,"n":0,"t":"#6 tool","s":"running · call","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_s1"},"owner":4,"state":{"status":"running","checkpoint":{"phase":"call"}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"call"}}},"cv":1}]},{"q":7,"by":"pi.tool：提交意图","note":"#6 写入执行意图，开始执行 subagent 工具。","x":[{"c":3,"n":0,"t":"#6 tool","s":"running · execute","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_s1"},"owner":4,"state":{"status":"running","checkpoint":{"phase":"execute","arguments":{"task":"Find the weather in Paris"},"replay":"unsafe"}}},"b":{"state":{"status":"running","checkpoint":{"phase":"call"}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 running","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{"call_s1":{"name":"subagent","output":"","status":"running","task_id":6}}},"b":{"tools":{"call_s1":{"name":"subagent","output":"","status":"pending","task_id":6}}},"cv":1}]},{"q":8,"by":"subagent 工具：创建子会话","note":"subagent 工具在自己的一次提交里新建子会话 #7，它的 owner 是Task #6，并写下 #7 的 pi.agent。会话也就挂进了所有权树。","x":[{"c":0,"n":1,"t":"#7","s":"会话7 · 子会话 · owner Task #6","key":"conversation:7","a":{"id":7,"owner":{"conversation_id":1,"task_id":6}},"b":null,"cv":7},{"c":4,"n":1,"t":"pi.agent","s":"会话7 · model fake","key":"doc:pi.agent@c:7","a":{"model":"fake"},"b":null,"cv":7}]},{"q":9,"by":"subagent 工具：向子会话 submit()","note":"工具向子会话提交问题。写入的东西和主会话第 2 步一模一样，只是都挂在会话 #7 下面：用户条目 #9、Submission #8、Task #10，以及子会话自己的pi.live@c:7。","x":[{"c":2,"n":1,"t":"#9 user","s":"会话7 · “Find the weather in Paris”","key":"entry:9","a":{"kind":"pi.user","model":[{"role":"user","content":"Find the weather in Paris"}],"id":9,"conversation_id":7},"b":null,"cv":7},{"c":1,"n":1,"t":"#8 input","s":"会话7 · placed","key":"submission:8","a":{"id":8,"conversation_id":7,"type":"input","status":"placed","entry":9,"request_id":"subagent:6"},"b":null,"cv":7},{"c":3,"n":1,"t":"#10 generation","s":"会话7 · pending · prepare","key":"task:10","a":{"id":10,"conversation_id":7,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":7},{"c":4,"n":1,"t":"pi.live","s":"会话7 · 建立 run 的负责权 → #10","key":"doc:pi.live@c:7","a":{"generation":{"partial":null,"task_id":10},"run":{"inputs":[{"entry":9,"id":8,"request_id":"subagent:6"}],"task_id":10},"tools":{}},"b":null,"cv":7},{"c":4,"n":1,"t":"pi.inbox","s":"会话7 · 新建（空）","key":"doc:pi.inbox@c:7","a":{"items":[]},"b":null,"cv":7}]},{"q":10,"by":"调度器：领走任务","note":"调度器领走子会话里的 #10。","x":[{"c":3,"n":0,"t":"#10 generation","s":"会话7 · running · prepare","key":"task:10","a":{"id":10,"conversation_id":7,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":7}]},{"q":11,"by":"pi.generation：prepare 阶段","note":"#10 的 prepare 跑完。","x":[{"c":3,"n":0,"t":"#10 generation","s":"会话7 · running · request","key":"task:10","a":{"id":10,"conversation_id":7,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["subagent"],"cutoff":9}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":7}]},{"q":12,"by":"pi.generation：处理模型回复","note":"子会话回答：条目 #11，Submission #8 done，#10 结束。工具拿到了回答文本。","x":[{"c":2,"n":1,"t":"#11 assistant","s":"会话7 · “Paris is sunny, 21°C.”","key":"entry:11","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"Paris is sunny, 21°C.","tool_calls":[],"stop_reason":"stop"}],"id":11,"conversation_id":7,"by_task_id":10},"b":null,"cv":7},{"c":1,"n":0,"t":"#8 input","s":"会话7 · placed → done","key":"submission:8","a":{"id":8,"conversation_id":7,"type":"input","status":"done","entry":9,"answer":11,"request_id":"subagent:6"},"b":{"answer":null,"status":"placed"},"cv":7},{"c":3,"n":0,"t":"#10 generation","s":"会话7 · terminal · completed","key":"task:10","a":{"id":10,"conversation_id":7,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":11}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["subagent"],"cutoff":9}}},"cv":7},{"c":4,"n":1,"t":"pi.usage","s":"会话7 · 新建","key":"doc:pi.usage@c:7","a":{"models":{"fake":{"input":7,"output":6,"requests":1}},"tools":{}},"b":null,"cv":7},{"c":4,"n":0,"t":"pi.live","s":"会话7 · run 清空，会话空闲","key":"doc:pi.live@c:7","a":{"generation":null,"run":null,"tools":{}},"b":{"generation":{"partial":null,"task_id":10},"run":{"inputs":[{"entry":9,"id":8,"request_id":"subagent:6"}],"task_id":10}},"cv":7},{"c":4,"n":2,"t":"清理 t:10","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:10"},"b":null,"cv":null}]},{"q":13,"by":"pi.tool：提交结果","note":"工具Task #6 提交结果条目 #12（写在主会话），#6 结束。如果子会话的 #10 还没结束，#6 会先停在 completing，等它结束。","x":[{"c":2,"n":1,"t":"#12 tool-result","s":"结果：Paris is sunny, 21°C.","key":"entry:12","a":{"kind":"pi.tool-result","model":[{"role":"tool_result","call_id":"call_s1","name":"subagent","content":"Paris is sunny, 21°C.","is_error":false}],"data":{"duration_ms":5},"id":12,"conversation_id":1,"by_task_id":6},"b":null,"cv":1},{"c":3,"n":0,"t":"#6 tool","s":"terminal · completed","key":"task:6","a":{"id":6,"conversation_id":1,"kind":"pi.tool","input":{"assistant":5,"call_id":"call_s1"},"owner":4,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":12}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"execute","arguments":{"task":"Find the weather in Paris"},"replay":"unsafe"}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"工具槽位 done","key":"doc:pi.live@c:1","a":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{"call_s1":{"name":"subagent","output":"Paris is sunny, 21°C.","status":"done","task_id":6}}},"b":{"tools":{"call_s1":{"name":"subagent","output":"","status":"running","task_id":6}}},"cv":1},{"c":4,"n":0,"t":"pi.usage","s":"累计用量更新","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":10,"output":1,"requests":1}},"tools":{"subagent":1}},"b":{"tools":{}},"cv":1},{"c":4,"n":2,"t":"清理 t:6","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:6"},"b":null,"cv":null}]},{"q":14,"by":"调度器：领走任务","note":"调度器把 #4 领走，进入 tools 阶段。","x":[{"c":3,"n":0,"t":"#4 generation","s":"running · tools","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"tools","assistant":5,"tools":[6]}}},"b":{"state":{"status":"waiting","checkpoint":{"phase":"tools","assistant":5,"tools":[6]},"on":[6],"policy":"allSettled"}},"cv":1}]},{"q":15,"by":"pi.generation：tools 阶段","note":"tools 阶段：新建 Task #13，接过 run 的负责权；#4 结束。","x":[{"c":3,"n":1,"t":"#13 generation","s":"pending · prepare","key":"task:13","a":{"id":13,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"b":null,"cv":1},{"c":3,"n":0,"t":"#4 generation","s":"terminal · completed","key":"task:4","a":{"id":4,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":5}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"tools","assistant":5,"tools":[6]}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"run 的负责权 #4 → #13","key":"doc:pi.live@c:1","a":{"generation":{"partial":null,"task_id":13},"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":13},"tools":{}},"b":{"generation":null,"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":4},"tools":{"call_s1":{"name":"subagent","output":"Paris is sunny, 21°C.","status":"done","task_id":6}}},"cv":1},{"c":4,"n":2,"t":"清理 t:4","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:4"},"b":null,"cv":null}]},{"q":16,"by":"调度器：领走任务","note":"调度器领走 #13。","x":[{"c":3,"n":0,"t":"#13 generation","s":"running · prepare","key":"task:13","a":{"id":13,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"b":{"state":{"status":"pending","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":17,"by":"pi.generation：prepare 阶段","note":"#13 的 prepare。","x":[{"c":3,"n":0,"t":"#13 generation","s":"running · request","key":"task:13","a":{"id":13,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["subagent"],"cutoff":12}}},"b":{"state":{"status":"running","checkpoint":{"phase":"prepare","attempt":1}}},"cv":1}]},{"q":18,"by":"pi.generation：处理模型回复","note":"最终回答条目 #14；Submission #2 done；主会话空闲。子会话 #7 和它的记录都保留着。","x":[{"c":2,"n":1,"t":"#14 assistant","s":"“My helper says: Paris is sunny, 21°C.”","key":"entry:14","a":{"kind":"pi.assistant","model":[{"role":"assistant","content":"My helper says: Paris is sunny, 21°C.","tool_calls":[],"stop_reason":"stop"}],"id":14,"conversation_id":1,"by_task_id":13},"b":null,"cv":1},{"c":1,"n":0,"t":"#2 input","s":"placed → done","key":"submission:2","a":{"id":2,"conversation_id":1,"type":"input","status":"done","entry":3,"answer":14},"b":{"answer":null,"status":"placed"},"cv":1},{"c":3,"n":0,"t":"#13 generation","s":"terminal · completed","key":"task:13","a":{"id":13,"conversation_id":1,"kind":"pi.generation","input":{},"owner":null,"state":{"status":"terminal","outcome":{"status":"completed","result":{"entry_id":14}}}},"b":{"state":{"status":"running","checkpoint":{"phase":"request","attempt":1,"model":"fake","tools":["subagent"],"cutoff":12}}},"cv":1},{"c":4,"n":0,"t":"pi.usage","s":"累计用量更新","key":"doc:pi.usage@c:1","a":{"models":{"fake":{"input":26,"output":11,"requests":2}},"tools":{"subagent":1}},"b":{"models":{"fake":{"input":10,"output":1,"requests":1}}},"cv":1},{"c":4,"n":0,"t":"pi.live","s":"run 清空，会话空闲","key":"doc:pi.live@c:1","a":{"generation":null,"run":null,"tools":{}},"b":{"generation":{"partial":null,"task_id":13},"run":{"inputs":[{"entry":3,"id":2,"request_id":null}],"task_id":13}},"cv":1},{"c":4,"n":2,"t":"清理 t:13","s":"任务结束，清理它的任务文档","key":null,"a":{"retire":"t:13"},"b":null,"cv":null}]}],"quiz":[{"step":8,"kind":"pick","prompt":"请找出：子会话 #7 属于（owner）哪条记录？","answer":"task:6","explain":"conversation.owner.task_id = 6。会话也能被任务拥有，所有权树就这样穿过了会话的边界。"},{"step":9,"kind":"choice","prompt":"子会话里的 Submission #8 和主会话的 Submission #2 是什么关系？","options":["#8 是 #2 的一部分","它们之间没有直接引用：分属两个会话，#8 是工具Task #6 自己提交的","#8 会替换 #2","#2 的 answer 会指向 #8"],"answer":1,"explain":"工具像一个普通调用方一样向子会话 submit。两张 Submission 各自属于自己的会话；把它们联系起来的是所有权树：会话 #7 属于 #6，#6 属于 #4。"},{"step":10,"kind":"choice","prompt":"如果此刻中止主会话的Task #4，哪些任务会被级联中止？","options":["只有 #4","#4 和 #6","#4、#6，还有子会话里的 #10","所有会话里的所有任务"],"answer":2,"explain":"#10 属于会话 #7，会话 #7 属于Task #6，#6 又属于 #4。中止沿着这条链往下传，而且自下而上执行：#10 先，#6 次之，#4 最后。"},{"step":13,"kind":"pick","prompt":"请找出：工具Task #6 的结果条目。","answer":"entry:12","explain":"#6 的 outcome.result.entry_id = 12。注意它写在主会话里，而子会话的回答是条目 #11。"},{"step":18,"kind":"choice","prompt":"主会话回答完之后，子会话 #7 会怎样？","options":["被删除","保留：它的对话记录和 Submission 都还在，以后还能继续向它提问","合并进会话 #1","变成后台任务"],"answer":1,"explain":"会话、已有的条目和 Submission 仍然保留，owner 关系也还在。结束的任务如有自己的文档，则会进行任务文档清理。"}],"runtime":[{"seq":1,"live":[],"meta":[],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":2,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":3,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":4,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":5,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"pending","phase":"call"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":6,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"call"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":7,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":8,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.usage","key":"c:1"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":9,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"},{"id":10,"kind":"pi.generation","conversation_id":7,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null},{"id":10,"owner":null,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":10,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"},{"id":10,"kind":"pi.generation","conversation_id":7,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null},{"id":10,"owner":null,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":11,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"},{"id":10,"kind":"pi.generation","conversation_id":7,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null},{"id":10,"owner":null,"outcome":null}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false},{"task_id":10,"conversation_id":7,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":12,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]},{"id":6,"kind":"pi.tool","conversation_id":1,"status":"running","phase":"execute"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":null},{"id":10,"owner":null,"outcome":{"status":"completed","result":{"entry_id":11}}}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false},{"task_id":10,"conversation_id":7,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"},{"kind":"pi.usage","key":"c:7"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":13,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"waiting","phase":"tools","on":[6]}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":12}}},{"id":10,"owner":null,"outcome":{"status":"completed","result":{"entry_id":11}}}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false},{"task_id":10,"conversation_id":7,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"},{"kind":"pi.usage","key":"c:7"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":14,"live":[{"id":4,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"tools"}],"meta":[{"id":4,"owner":null,"outcome":null},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":12}}},{"id":10,"owner":null,"outcome":{"status":"completed","result":{"entry_id":11}}}],"invocations":[{"task_id":6,"conversation_id":1,"kind":"pi.tool","mode":"run","ended":false,"future_done":false},{"task_id":10,"conversation_id":7,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"},{"kind":"pi.usage","key":"c:7"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":15,"live":[{"id":13,"kind":"pi.generation","conversation_id":1,"status":"pending","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":12}}},{"id":10,"owner":null,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"},{"kind":"pi.usage","key":"c:7"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":16,"live":[{"id":13,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"prepare"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":12}}},{"id":10,"owner":null,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":null}],"invocations":[{"task_id":4,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"},{"kind":"pi.usage","key":"c:7"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":17,"live":[{"id":13,"kind":"pi.generation","conversation_id":1,"status":"running","phase":"request"}],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":12}}},{"id":10,"owner":null,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":null}],"invocations":[{"task_id":13,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"},{"kind":"pi.usage","key":"c:7"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]},{"seq":18,"live":[],"meta":[{"id":4,"owner":null,"outcome":{"status":"completed","result":{"entry_id":5}}},{"id":6,"owner":4,"outcome":{"status":"completed","result":{"entry_id":12}}},{"id":10,"owner":null,"outcome":{"status":"completed","result":{"entry_id":11}}},{"id":13,"owner":null,"outcome":{"status":"completed","result":{"entry_id":14}}}],"invocations":[{"task_id":13,"conversation_id":1,"kind":"pi.generation","mode":"run","ended":false,"future_done":false}],"cache":[{"kind":"pi.agent","key":"c:1"},{"kind":"pi.agent","key":"c:7"},{"kind":"pi.inbox","key":"c:1"},{"kind":"pi.inbox","key":"c:7"},{"kind":"pi.live","key":"c:1"},{"kind":"pi.live","key":"c:7"},{"kind":"pi.usage","key":"c:1"},{"kind":"pi.usage","key":"c:7"}],"owners":[{"conversation_id":7,"task_id":6}],"models":["fake"],"extensions":[{"name":"helpers","tools":["subagent"]}]}]}];
+const TIP = {
+  0: "会话只在创建时写一次，之后不再修改。其他记录都靠 conversation_id 挂在它下面。",
+  1: "Submission只在关键时刻被写：创建时（placed 或 queued）、排队的被放进对话时（queued → placed）、有结果时（done / unanswered）。",
+  2: "条目只会被新增，永远不会被修改。",
+  3: "任务是被写得最频繁的：被领走、推进 checkpoint、进入等待、结束，每一次都是整条记录替换。",
+  "pi.live": "pi.live 跟着 run 的进展不断被改写：run 的负责权交给谁、要回答哪些Submission、工具槽位的状态。",
+  "pi.inbox": "排队区：会话忙时加入，到了合适的边界再取出。",
+  "pi.usage": "每次模型回复、工具调用之后累加。",
+  "pi.agent": "会话创建时写入，之后只有 configure() 会改。",
+  retire: "任务结束时，框架在同一次提交里清理这个任务作用域下的文档（key t:任务号）。本例里任务没有自己的文档，所以这次清理不删除任何东西。",
+};
+const DEFAULT_OPEN = Object.fromEntries(DATA.map((scene) => [scene.id, { q: 1, i: 1 }]));
+
+const S = { sc: DATA.findIndex((scene) => scene.id === document.body.dataset.scenario), mode: "learn", open: null, q: null };
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pj = (o) => esc(JSON.stringify(o, null, 2));
+const cur = () => DATA[S.sc];
+const curQ = () => cur().quiz[S.q.i];
+function nameOf(key) {
+  if (!key) return "";
+  const i = key.indexOf(":"), t = key.slice(0, i), id = key.slice(i + 1);
+  if (t === "doc") { const [k, c] = id.split("@"); return k + "（会话 " + c.slice(2) + "）"; }
+  return ({ conversation: "会话", submission: "Submission", entry: "Entry", task: "Task" })[t] + " #" + id;
+}
+function buildCommitIndexes(scenario) {
+  const commits = [new Map()];
+  for (const row of scenario.rows) {
+    const state = new Map(commits.at(-1));
+    row.x.forEach((item, index) => {
+      if (item.key) {
+        state.set(item.key, { row: row.q, index, item });
+      } else if (item.n === 2 && item.a?.retire) {
+        const suffix = `@${item.a.retire}`;
+        for (const key of state.keys()) {
+          if (key.startsWith("doc:") && key.endsWith(suffix)) state.delete(key);
+        }
+      }
+    });
+    commits.push(state);
+  }
+  return commits;
+}
+
+function recordTitle(item) {
+  if (!item.key) return item.t;
+  if (item.c === 4) return item.key.slice("doc:".length).replace("@", " @ ");
+  const type = ["会话", "Submission", "Entry", "Task"][item.c];
+  return `${type} #${item.a.id}`;
+}
+
+function recordLinks(item, currentState) {
+  if (!item.key) return [];
+  const record = item.a;
+  const links = new Map();
+  const add = (field, type, id) => {
+    if (!Number.isInteger(id)) return;
+    const key = `${type}:${id}`;
+    if (key !== item.key && currentState.has(key) && !links.has(key)) {
+      links.set(key, { field, key });
+    }
+  };
+
+  switch (item.c) {
+    case 0:
+      add("owner.task_id", "task", record.owner?.task_id);
+      add("owner.conversation_id", "conversation", record.owner?.conversation_id);
+      break;
+    case 1:
+      add("entry", "entry", record.entry);
+      add("answer", "entry", record.answer);
+      break;
+    case 2:
+      add("by_task_id", "task", record.by_task_id);
+      break;
+    case 3: {
+      const checkpoint = record.state?.checkpoint;
+      add("owner", "task", record.owner);
+      (record.state?.on ?? []).forEach((id, i) => add(`state.on[${i}]`, "task", id));
+      if (record.kind === "pi.generation") {
+        add("state.checkpoint.assistant", "entry", checkpoint?.assistant);
+        add("state.checkpoint.cutoff", "entry", checkpoint?.cutoff);
+        if (checkpoint?.phase === "tools") {
+          (checkpoint.tools ?? []).forEach((id, i) => add(`state.checkpoint.tools[${i}]`, "task", id));
+        }
+      }
+      if (record.kind === "pi.tool") add("input.assistant", "entry", record.input?.assistant);
+      if (record.kind === "pi.generation" || record.kind === "pi.tool") {
+        add("state.outcome.result.entry_id", "entry", record.state?.outcome?.result?.entry_id);
+      }
+      break;
+    }
+    case 4: {
+      if (item.t === "pi.live") {
+        add("run.task_id", "task", record.run?.task_id);
+        (record.run?.inputs ?? []).forEach((input, i) => {
+          add(`run.inputs[${i}].id`, "submission", input.id);
+          add(`run.inputs[${i}].entry`, "entry", input.entry);
+        });
+        add("generation.task_id", "task", record.generation?.task_id);
+        for (const [callId, slot] of Object.entries(record.tools ?? {})) {
+          add(`tools[${JSON.stringify(callId)}].task_id`, "task", slot.task_id);
+        }
+      } else if (item.t === "pi.inbox") {
+        (record.items ?? []).forEach((input, i) => add(`items[${i}].id`, "submission", input.id));
+      }
+      const address = item.key.slice(item.key.lastIndexOf("@") + 1);
+      const [scope, id] = address.split(":");
+      if (scope === "c") add(`文档地址 ${address}`, "conversation", Number(id));
+      if (scope === "t") add(`文档地址 ${address}`, "task", Number(id));
+      break;
+    }
+  }
+  add("conversation_id", "conversation", record.conversation_id);
+  return [...links.values()];
+}
+
+const COMMIT_INDEXES = DATA.map(buildCommitIndexes);
+
+function chipCls(x) { return x.n === 2 ? "ret" : x.n === 1 ? "new" : "upd"; }
+
+function visibleRows() {
+  const rows = cur().rows;
+  if (S.mode !== "quiz" || !S.q || S.q.finished) return rows;
+  const q = curQ();
+  return rows.slice(0, S.q.revealed ? q.step + 1 : q.step);
+}
+
+/* The storage publication is the recorded event. These arrows explain the
+   component calls around it, using recorded writes plus the Python phase code. */
+function sequenceEvents(scenario) {
+  const events = scenario.rows.map(() => []);
+  const emit = (row, from, to, label, detail, after = false) => {
+    events[row.q - 1].push({ from, to, label, detail, after });
+  };
+  const root = scenario.rows[0];
+  emit(root, "user", "harness", "初始化会话", "示例程序先调用 harness.root()。会话和 pi.agent 在随后的同一批提交中创建。");
+
+  for (const [i, row] of scenario.rows.entries()) {
+    const previous = scenario.rows[i - 1];
+    const taskWrites = row.x.filter((item) => item.c === 3);
+    const entryWrites = row.x.filter((item) => item.c === 2);
+    const submissions = row.x.filter((item) => item.c === 1);
+    const task = taskWrites[0]?.a;
+
+    if (row.by.startsWith("conversation.submit()")) {
+      const submission = submissions[0]?.a;
+      const entry = entryWrites.find((item) => item.a.id === submission?.entry);
+      const inbox = row.x.find((item) => item.key?.startsWith("doc:pi.inbox@"));
+      const queued = inbox?.a.items?.find((item) => item.id === submission?.id);
+      const message = entry?.a.model?.[0]?.content ?? queued?.content;
+      const label = submission?.type === "write" ? "提交展示条目" :
+        submission?.status !== "queued" ? "发送用户问题" :
+          queued?.mode === "steer" ? "发送纠正消息" : "发送跟进问题";
+      const detail = submission?.type === "write"
+        ? "调用 submit({type: 'write', ...})。本例的 chat.note 直接写成展示条目。"
+        : "调用 conversation.submit()。" + (typeof message === "string" ? "输入：" + message : "") +
+          (submission?.status === "queued" ? "此时会话忙，这个输入先进入 pi.inbox。" : "");
+      emit(row, "user", "harness", label, detail);
+    }
+
+    if (previous?.by.startsWith("调度器：领走任务")) {
+      for (const reserved of previous.x.filter((item) => item.c === 3)) {
+        const id = reserved.a.id;
+        const phase = reserved.a.state?.checkpoint?.phase;
+        const observed = scenario.runtime?.[i]?.invocations?.some((inv) => inv.task_id === id);
+        if (observed) {
+          emit(row, "scheduler", "worker", "启动 Task #" + id,
+            "调度器在上一批提交把任务写成 running 后，才启动调用并把它放进 _invocations。进入 " + phase + " 阶段。");
+        }
+      }
+    }
+
+    if (row.by.startsWith("pi.generation：prepare") && task?.state.checkpoint?.phase === "request") {
+      const { model, cutoff } = task.state.checkpoint;
+      emit(row, "worker", "external", "请求模型 " + model,
+        "prepare 先保存模型、工具名单和上下文截止点（Entry #" + cutoff +
+        "）。之后 request 从这些信息构建请求并调用 model.stream()。", true);
+    }
+
+    if (row.by.startsWith("pi.generation：处理模型回复")) {
+      const reply = entryWrites.find((item) => item.a.kind === "pi.assistant")?.a.model?.[0];
+      if (reply) {
+        const tools = (reply.tool_calls ?? []).map((call) => call.name);
+        emit(row, "external", "worker", tools.length ? "返回工具调用" : "返回模型回答",
+          tools.length ? "模型请求调用 " + tools.join("、") +
+            "。模型只给出调用指令，生成任务随后提交 assistant 条目和待运行的工具任务。" :
+            "模型流返回本轮最终消息。生成任务随后把该消息写成 assistant 条目。");
+      }
+    }
+
+    if (row.by.startsWith("pi.tool：提交意图")) {
+      const live = row.x.find((item) => item.key?.startsWith("doc:pi.live@"));
+      const tool = Object.values(live?.a.tools ?? {}).find((slot) => slot.task_id === task?.id);
+      if (tool) {
+        emit(row, "worker", "external", "调用 " + tool.name,
+          "工具任务先将运行意图、参数和 replay 策略写入存储。提交成功后，才调用工具的 execute 方法。", true);
+      }
+    }
+
+    if (row.by === "subagent 工具：创建子会话") {
+      emit(row, "external", "worker", "申请创建子会话",
+        "subagent 工具通过 TaskRuntime.commit() 创建会话 #7 和该会话的 pi.agent。会话的 owner 指向工具Task #6。");
+    }
+
+    if (row.by === "subagent 工具：向子会话 submit()") {
+      emit(row, "external", "harness", "向子会话提问",
+        "subagent 工具取得会话 #7 的句柄并调用 child.submit()，然后等待子会话的 Submission #8。");
+    }
+
+    if (row.by.startsWith("pi.tool：提交结果")) {
+      if (scenario.id === "subagent") {
+        emit(row, "harness", "external", "子会话已回答",
+          "上一批已经保存子会话的回答。工具等到 Submission #8 结算后，根据 answer 读出子会话的回答文本。");
+      }
+      const result = entryWrites.find((item) => item.a.kind === "pi.tool-result")?.a.model?.[0];
+      if (result) {
+        emit(row, "external", "worker", "返回工具结果",
+          "工具 " + result.name + " 的返回值交给工具任务。接下来才写入 tool-result 条目、任务结果和工具槽位。");
+      }
+    }
+
+    if (i === scenario.rows.length - 1 && submissions.some((item) => item.a.status === "done")) {
+      emit(row, "harness", "user", "等待结果返回",
+        "回答条目和 Submission 的 done 状态已提交。示例调用方的 wait() 可以返回，answer 保存回答条目的 ID。", true);
+    }
+  }
+  return events;
+}
+
+function persistenceSender(row, _scenario) {
+  if (row.by.startsWith("调度器")) return "scheduler";
+  if (/^(harness\.|conversation\.)/.test(row.by) || row.by.includes("向子会话 submit()")) return "harness";
+  return "worker"; // Generation, tool, and the tool's own child-conversation transaction.
+}
+
+function persistenceLabels(row) {
+  const entryKinds = {
+    "pi.user": "用户消息",
+    "pi.assistant": "模型回复",
+    "pi.tool-result": "工具结果",
+    "pi.system": "系统条目",
+  };
+  return row.x.map((item) => {
+    const value = item.a;
+    if (item.n === 2) return `清理任务文档 ${value.retire}`;
+    const created = item.n === 1;
+    switch (item.c) {
+      case 0:
+        return `${created ? "新增" : "更新"}会话 #${value.id}` +
+          (value.owner?.task_id ? `（归属 #${value.owner.task_id}）` : "");
+      case 1:
+        return `${created ? "+" : ""}Submission #${value.id} ${created ? "·" : "→"} ${value.status}` +
+          (value.answer ? `（回答 #${value.answer}）` : "");
+      case 2:
+        return `${created ? "+" : ""}Entry #${value.id}` + (entryKinds[value.kind] ? `（${entryKinds[value.kind]}）` : "");
+      case 3: {
+        const state = value.state;
+        const phase = state.checkpoint?.phase;
+        const besides = phase ? `/${phase}` : "";
+        return `${created ? "+" : ""}Task #${value.id} ${created ? "·" : "→"} ${state.status}${besides}`;
+      }
+      case 4: {
+        const address = item.key.slice(item.key.lastIndexOf("@") + 1);
+        const doc = `${created ? "+" : ""}${item.t} ${address}`;
+        switch (item.t) {
+          case "pi.agent":
+            return doc + (typeof value.model === "string" ? `（${value.model}）` : "");
+          case "pi.live": {
+            const run = value.run;
+            if (run?.task_id && (created || item.b?.run)) return doc + ` → Task #${run.task_id}`;
+            if (!run && item.b?.run) return doc + "（结束 run）";
+            const slots = Object.values(value.tools ?? {});
+            if (slots.length === 1) return doc + `（工具 ${slots[0].status}）`;
+            return doc;
+          }
+          case "pi.inbox": {
+            const now = new Set(value.items?.map(({ id }) => id));
+            const previous = new Set(item.b?.items?.map(({ id }) => id));
+            const inserted = [...now].filter((id) => !previous.has(id));
+            const removed = [...previous].filter((id) => !now.has(id));
+            if (inserted.length === 1 && !removed.length) return doc + `（入队 #${inserted[0]}）`;
+            if (removed.length === 1 && !inserted.length) return doc + `（取出 #${removed[0]}）`;
+            return doc;
+          }
+          default:
+            return doc;
+        }
+      }
+      default:
+        return item.t;
+    }
+  });
+}
+
+const PARTICIPANTS = [
+  { id: "user", title: "用户", short: "用户", sub: "请求 / 回执" },
+  { id: "harness", title: "会话", short: "会话", sub: "Conversation / Harness" },
+  { id: "scheduler", title: "调度器", short: "调度", sub: "Scheduler" },
+  { id: "worker", title: "任务调用", short: "调用", sub: "Invocation" },
+  { id: "external", title: "模型 / 工具", short: "模型 / 工具", sub: "执行方" },
+  { id: "storage", title: "DB", short: "DB", sub: "Storage" },
+];
+const PARTICIPANT_BY_ID = new Map(PARTICIPANTS.map((p, i) => [p.id, { ...p, index: i }]));
+const EVENT_ROWS = DATA.map(sequenceEvents);
+
+function activeMessage(row) {
+  if (!S.open || S.open.q !== row.q || !Number.isInteger(S.open.event)) return null;
+  return EVENT_ROWS[S.sc][row.q - 1][S.open.event] || null;
+}
+
+function arrowHTML(row, from, to, label, inner, event) {
+  const origin = PARTICIPANT_BY_ID.get(from), target = PARTICIPANT_BY_ID.get(to);
+  const start = Math.min(origin.index, target.index);
+  const span = Math.abs(origin.index - target.index) + 1;
+  const storage = event === null;
+  const backwards = origin.index > target.index;
+  const active = S.open?.q === row.q && (storage ? !Number.isInteger(S.open.event) : S.open.event === event);
+  const rowTitle = storage ? "第 " + row.q + " 次写入 DB（" + row.x.length + " 项）" :
+    origin.title + " → " + target.title + "：" + label;
+  return '<div class="message-row"><button type="button" class="message ' +
+    (storage ? "store-message" : "runtime-message") + (backwards ? " reversed" : "") +
+    '" data-act="' + (storage ? "db" : "event") + '" data-q="' + row.q + '"' +
+    (storage ? '' : ' data-e="' + event + '"') + ' aria-pressed="' + active +
+    '" aria-label="' + esc(rowTitle) + '" style="--line-start:' + (start + 1) +
+    ';--line-end:' + (start + span + 1) + ';--edge:' + (50 / span).toFixed(5) + '%">' +
+    '<span class="message-content">' + inner + '</span><span class="message-line" aria-hidden="true"></span></button></div>';
+}
+
+function sequenceHTML(rows) {
+  const header = '<div class="sequence-head"><span class="sequence-time" aria-label="时间从上往下">时间 <span aria-hidden="true">↓</span></span>' +
+    '<div class="message-grid">' + PARTICIPANTS.map((p) =>
+      '<div class="participant participant-' + p.id + '">' +
+      (p.id === "storage" ? '<span class="db-icon" aria-hidden="true"></span>' : "") +
+      '<div><strong aria-label="' + esc(p.title) + '"><span class="participant-full">' + esc(p.title) +
+      '</span><span class="participant-short" aria-hidden="true">' + esc(p.short) + '</span></strong>' +
+      '<small>' + esc(p.sub) + '</small></div></div>'
+    ).join("") + '</div></div>';
+  if (!rows.length) return header + '<p class="sequence-empty">时序图还没有展开到第一次提交。</p>';
+
+  const groups = rows.map((row) => {
+    const events = EVENT_ROWS[S.sc][row.q - 1].map((event, i) => ({
+      after: event.after,
+      html: arrowHTML(row, event.from, event.to, event.label, '<span class="runtime-label">' + esc(event.label) + '</span>', i),
+    }));
+    const writes = persistenceLabels(row).map((label, i) => {
+      const op = row.x[i].n;
+      return '<span class="write-tag' + (op === 2 ? ' write-cleanup' : '') + '">' + esc(label) + '</span>';
+    }).join("");
+    const db = arrowHTML(row, persistenceSender(row, cur()), "storage", "",
+      '<span class="commit-label">写入 DB</span><span class="write-tags">' + writes + '</span>', null);
+    return '<div class="sequence-group' + (S.open?.q === row.q ? ' current-group' : '') + '" data-step="' + row.q + '">' +
+      '<div class="step-gutter"><span class="step-number" aria-label="第 ' + row.q + ' 次提交">' + row.q + '</span></div>' +
+      '<div class="group-messages"><div class="lifelines message-grid" aria-hidden="true">' +
+      PARTICIPANTS.map((p) => '<span class="' + (p.id === "storage" ? "storage-lifeline" : "") + '"></span>').join("") + '</div>' +
+      events.filter((e) => !e.after).map((e) => e.html).join("") + db +
+      events.filter((e) => e.after).map((e) => e.html).join("") + '</div></div>';
+  });
+  return header + groups.join("");
+}
+
+function showStep(insideDiagram = false) {
+  const inspector = $("#commit-inspector");
+  if (!inspector) return;
+  if (insideDiagram) {
+    const group = $('.sequence-group[data-step="' + S.open.q + '"]');
+    const scroll = $("#sequence-scroll");
+    if (group && scroll) {
+      const bounds = scroll.getBoundingClientRect();
+      const visibleTop = bounds.top + $(".sequence-head").getBoundingClientRect().height;
+      if (group.getBoundingClientRect().top < visibleTop ||
+          group.getBoundingClientRect().bottom > bounds.bottom) {
+        scroll.scrollTop += group.getBoundingClientRect().top - visibleTop;
+      }
+    }
+  } else {
+    const top = inspector.getBoundingClientRect().top;
+    if (top > window.innerHeight - 120) inspector.scrollIntoView({block:"start"});
+  }
+}
+
+const DOC_ROLES = {
+  "pi.agent": ["Agent 配置", "会话使用的模型、系统指令和工具配置。生成任务准备请求时会读它。"],
+  "pi.live": ["执行进度", "当前 run、正在生成的回复和工具槽位。它是可持久化的文档，也会出现在内存缓存中。"],
+  "pi.inbox": ["待处理的输入", "忙碌时排队的 Submission，由调度边界决定何时接入对话。"],
+  "pi.usage": ["累计用量", "模型用量和工具调用次数。"],
+};
+
+const STATE_LABEL = {
+  pending: "待调度", running: "已领走", waiting: "等待依赖", sleeping: "休眠",
+  completing: "正在收尾", terminal: "已结束",
+};
+
+function refButton(key, label, field = "", at = null) {
+  return '<button type="button" class="ref" data-act="ref" data-ref="' + esc(key) + '"' +
+    (at ? ' data-at="' + at + '"' : '') + '>' +
+    (field ? '<code>' + esc(field) + '</code><span aria-hidden="true">→</span>' : "") +
+    '<span>' + esc(label) + '</span></button>';
+}
+
+function runtimeHTML(r, state) {
+  const now = cur().runtime[r.q - 1];
+  const prev = cur().runtime[r.q - 2];
+  const taskRef = (id) => refButton("task:" + id, "Task #" + id, "", r.q);
+  const liveList = now.live.map((task) =>
+    '<li>' + taskRef(task.id) + '<code>' + esc(task.status) + '</code>' +
+    '<span>' + esc((STATE_LABEL[task.status] || task.status) + (task.phase ? " · " + task.phase : "")) + '</span></li>'
+  ).join("");
+  const invocationList = now.invocations.map((inv) => {
+    const status = state.get("task:" + inv.task_id)?.item.a.state.status;
+    let note = inv.ended || inv.future_done ? "正在清理" : inv.mode === "abort" ? "执行中止处理" : "本次调用仍在内存";
+    if (status === "terminal" || status === "waiting") note = "记录已变为 " + status + "，本次调用尚未移出";
+    return '<li>' + taskRef(inv.task_id) + '<span>' + esc(note) + '</span></li>';
+  }).join("");
+  const diff = (before, after, summary) => {
+    if (!before) return "";
+    if (JSON.stringify(before) === JSON.stringify(after)) return '<p class="micro">与上一提交的采样相同</p>';
+    const a = before.map(summary).join("、") || "空", b = after.map(summary).join("、") || "空";
+    if (a === b) return "";
+    return '<p class="micro">' + esc(a) + ' → ' + esc(b) + '</p>';
+  };
+  const taskSummary = (task) => "#" + task.id + " " + task.status + (task.phase ? "·" + task.phase : "");
+  const invSummary = (inv) => "#" + inv.task_id;
+  const cacheSummary = (doc) => doc.kind + "@" + doc.key;
+  const cached = now.cache.map((doc) => {
+    const key = "doc:" + doc.kind + "@" + doc.key;
+    const label = doc.kind + " · " + doc.key;
+    return state.has(key) ? refButton(key, label, "", r.q) : '<code class="cache-key">' + esc(label) + '</code>';
+  }).join("");
+  const models = now.models.map((name) => '<code>' + esc(name) + '</code>').join("");
+  const extensions = now.extensions.map((ext) =>
+    '<li><code>' + esc(ext.name) + '</code>' + (ext.tools.length ? '<span>' + esc(ext.tools.join("、")) + '</span>' : "") + '</li>'
+  ).join("");
+  const ownership = now.owners.map(({ conversation_id, task_id }) =>
+    '<li>' + refButton("conversation:" + conversation_id, "会话 #" + conversation_id, "", r.q) +
+    '<span>归属</span>' + taskRef(task_id) + '</li>'
+  ).join("");
+  const metadata = now.meta.map(({ id, owner, outcome }) =>
+    '<li>' + taskRef(id) + (owner ? '<span>父任务</span>' + taskRef(owner) : '') +
+    (outcome ? '<code>' + esc(outcome.status) + '</code>' : '') + '</li>'
+  ).join("");
+  return '<section class="observe-pane runtime-pane" aria-label="运行时状态">' +
+    '<div class="pane-title"><h3>运行时状态</h3><span>第 ' + r.q + ' 次提交发布时</span></div>' +
+    '<div class="runtime-grid">' +
+    '<section class="runtime-item"><h4>调度器任务索引 <code>_live</code></h4>' +
+      (liveList ? '<ul>' + liveList + '</ul>' : '<p class="muted">没有未结束的任务</p>') +
+      diff(prev?.live, now.live, taskSummary) + '</section>' +
+    '<section class="runtime-item"><h4>调用实例 <code>_invocations</code></h4>' +
+      (invocationList ? '<ul>' + invocationList + '</ul>' : '<p class="muted">没有调用实例</p>') +
+      diff(prev?.invocations, now.invocations, invSummary) + '</section>' +
+    '<section class="runtime-item"><h4>文档缓存 <code>Session._docs</code></h4>' +
+      (cached ? '<div class="ref-list">' + cached + '</div>' : '<p class="muted">缓存为空</p>') +
+      diff(prev?.cache, now.cache, cacheSummary) + '</section>' +
+    '<section class="runtime-item"><h4>已注册的实现 <code>Models / Registry</code></h4>' +
+      '<p class="model-names">模型 ' + (models || "无") + '</p>' +
+      (extensions ? '<ul>' + extensions + '</ul>' : '<p class="muted">没有用户扩展</p>') + '</section>' +
+    (metadata ? '<section class="runtime-item"><h4>任务归属与结局 <code>_meta</code></h4><ul>' + metadata + '</ul></section>' : '') +
+    (ownership ? '<section class="runtime-item"><h4>会话归属索引 <code>_conversation_owner</code></h4><ul>' + ownership + '</ul></section>' : "") +
+    '</div><p class="pane-note"><code>running</code> 是已保存的任务状态；<code>Invocation</code> 是调度器在内存里建立的调用实例。先写入 running，调度器才把 Invocation 加进运行索引并启动它。</p></section>';
+}
+
+function recordHTML(r, state) {
+  const selectedAt = S.open.refAt ?? r.q;
+  const recordState = COMMIT_INDEXES[S.sc][selectedAt];
+  const selected = S.open.ref ? recordState.get(S.open.ref) : null;
+  const pickAnswer = S.mode === "quiz" && S.q?.answered && !S.q.finished && curQ().kind === "pick" ? curQ().answer : null;
+  const index = S.open.i;
+  const x = selected ? selected.item : r.x[index];
+  const atoms = r.x.map((item, j) =>
+    '<button type="button" class="atom c' + item.c + " " + chipCls(item) + (!selected && index === j ? " on" : "") + (pickAnswer && pickAnswer === item.key ? " pick-answer" : "") +
+    '" aria-pressed="' + (!selected && index === j) + '" data-act="write" data-q="' + r.q + '" data-i="' + j + '">' +
+    (item.n === 2 ? "" : item.n ? "新增 " : "修改 ") + esc(item.t) + '</button>'
+  ).join("");
+  const documents = [...state.values()].filter(({ item }) => item.c === 4);
+  const docLinks = documents.map(({ item }) => {
+    const address = item.key.split("@").at(-1);
+    const role = DOC_ROLES[item.t]?.[0];
+    return refButton(item.key, item.t + " · " + address + (role ? " · " + role : ""));
+  }).join("");
+  let record = '<p class="muted">选择一次写入，或查看本步骤仍存在的文档。</p>';
+  if (x) {
+    const title = x.n === 2 ? x.t : recordTitle(x);
+    const tip = x.n === 2 ? TIP.retire : DOC_ROLES[x.t]?.[1] || TIP[x.c];
+    const wasWritten = !selected || (selectedAt === r.q && selected.row === r.q);
+    const raw = x.n === 2 ? "" : '<div class="cols">' +
+      (wasWritten && x.b && Object.keys(x.b).length ?
+        '<div><div class="lb">改之前（变化字段）</div><pre>' + pj(x.b) + '</pre></div>' : "") +
+      '<div><div class="lb">' + (wasWritten ? "写入值（节选）" : "此时的存储值（节选）") + '</div><pre>' + pj(x.a) + '</pre></div></div>';
+    const links = recordLinks(x, recordState);
+    const related = links.length ? '<div class="relations"><h4>关联字段</h4><div class="ref-list">' +
+      links.map(({ field, key }) => refButton(key, recordTitle(recordState.get(key).item), field, selectedAt)).join("") +
+      '</div></div>' : "";
+    record = '<div class="record-view" tabindex="-1"><div class="record-title"><h4>' + esc(title) +
+      '</h4>' + (!wasWritten ? '<span>第 ' + selectedAt + ' 次提交后 · 最后写于第 ' + selected.row + ' 次</span>' : "") + '</div>' +
+      (tip ? '<p class="tip">' + esc(tip) + '</p>' : "") + related + raw + '</div>';
+  }
+  return '<section class="observe-pane storage-pane" aria-label="持久化记录">' +
+    '<div class="pane-title"><h3>持久化记录</h3><span>本次提交 · ' + r.x.length + ' 项</span></div>' +
+    '<div class="atoms">' + atoms + '</div>' + record +
+    (docLinks ? '<div class="document-links"><h4>提交后已有的文档</h4><div class="ref-list">' + docLinks + '</div></div>' : '') +
+    '</section>';
+}
+
+function detailHTML(r) {
+  const state = COMMIT_INDEXES[S.sc][r.q];
+  const last = visibleRows().length;
+  const event = activeMessage(r);
+  const at = S.open.runtimeAt ?? r.q;
+  const sample = cur().rows[at - 1];
+  const title = event ? PARTICIPANT_BY_ID.get(event.from).title + " → " + PARTICIPANT_BY_ID.get(event.to).title + " · " + event.label : "写入 DB · " + r.x.length + " 项";
+  const context = event ? (event.after ? "本次写入之后。 " : "本次写入之前。 ") + event.detail : r.note;
+  const toggles = r.q <= 1 ? "" : '<div class="snapshot-controls" aria-label="选择运行时采样时刻">' +
+    '<button type="button" class="btn" data-act="sample" data-at="' + (r.q - 1) + '" aria-pressed="' + (at < r.q) + '">前一提交后</button>' +
+    '<button type="button" class="btn" data-act="sample" data-at="' + r.q + '" aria-pressed="' + (at === r.q) + '">本次提交后</button></div>';
+  return '<section class="det inspector" id="commit-inspector" aria-label="第 ' + r.q + ' 次提交详情">' +
+    '<div class="inspector-header"><div><h2>第 ' + r.q + ' 次提交 <span>/ ' + last + '</span></h2></div>' +
+    '<div class="observer-nav">' +
+    '<button type="button" class="btn" data-act="step" data-dir="-1"' + (r.q === 1 ? " disabled" : "") + '>上一步</button>' +
+    '<button type="button" class="btn" data-act="step" data-dir="1"' + (r.q >= last ? " disabled" : "") + '>下一步</button>' +
+    '<button type="button" class="btn" data-act="back-to-diagram">回到图</button></div></div>' +
+    '<p class="selection-context"><b>' + esc(title) + '</b><span>' + esc(context) + '</span></p>' +
+    toggles + '<div class="observe-grid">' + runtimeHTML(sample, COMMIT_INDEXES[S.sc][at]) + recordHTML(r, state) + '</div></section>';
+}
+
+function quizHTML() {
+  const sc = cur(), Q = S.q, total = sc.quiz.length;
+  if (Q.finished) {
+    return '<div class="quiz"><div class="qhead"><span>' + esc(sc.title) + ' · 练习完成</span></div><p class="qprompt">答对 ' + Q.score + " / " + total + " 题（按第一次作答计）。</p>" +
+      '<div class="row"><button type="button" class="btn primary" data-act="restart">再做一遍</button>' +
+      (S.sc < DATA.length - 1 ? '<a class="btn" href="' + esc(document.querySelector("[data-next-article]").getAttribute("href")) + '">下一篇</a>' : "") +
+      '<button type="button" class="btn" data-act="mode" data-mode="learn">回到时序图</button></div></div>';
+  }
+  const q = curQ();
+  let body = "";
+  if (q.kind === "choice") {
+    const type = q.multi ? "checkbox" : "radio", ans = [].concat(q.answer);
+    body += '<div class="opts">' + q.options.map((o, i) => {
+      let c = "opt";
+      if (Q.answered) { if (ans.includes(i)) c += " right"; else if (Q.chosen.includes(i)) c += " wrong"; }
+      const id = "q-" + S.sc + "-" + Q.i + "-" + i;
+      return '<label class="' + c + '" for="' + id + '"><input type="' + type + '" name="q" value="' + i + '" id="' + id + '"' + (Q.chosen.includes(i) ? " checked" : "") + (Q.answered ? " disabled" : "") + "><span>" + esc(o) + "</span></label>";
+    }).join("") + "</div>";
+    if (!Q.answered) body += '<p class="err" id="qerr"' + (Q.err ? "" : " hidden") + '>先选一个答案再提交。</p><div class="row"><button type="button" class="btn primary" data-act="submit">提交答案</button></div>';
+  } else if (!Q.answered) {
+    body += '<p class="hint">点图中的 DB 写入箭头，再在下方「持久化记录」中点一条记录作答。</p><div class="row"><button type="button" class="btn" data-act="giveup">显示答案</button></div>';
+  }
+  if (Q.answered) {
+    let fb = "<b>" + (Q.ok ? "答对了。" : q.kind === "pick" ? (Q.picked ? "不对，你点的是 " + esc(nameOf(Q.picked)) + "。正确答案是 " + esc(nameOf(q.answer)) + "。" : "正确答案是 " + esc(nameOf(q.answer)) + "。") : "不对，正确答案已标成绿色。") + "</b> " + esc(q.explain);
+    if (Q.revealed) fb += "<br><br><b>第 " + (q.step + 1) + " 次提交实际发生的：</b>" + esc(sc.rows[q.step].note);
+    body += '<div class="fb ' + (Q.ok ? "ok" : "no") + '">' + fb + '</div><div class="row">' +
+      (q.reveal && !Q.revealed ? '<button type="button" class="btn" data-act="reveal">看看下一次提交写了什么</button>' : "") +
+      '<button type="button" class="btn primary" data-act="nextq">' + (Q.i === total - 1 ? "查看成绩" : "下一题") + "</button></div>";
+  }
+  const shown = Q.revealed ? q.step + 1 : q.step;
+  return '<div class="quiz"><div class="qhead"><span>' + esc(sc.title) + " · 练习 " + (Q.i + 1) + " / " + total + "</span><span>时序图显示到第 " + shown + " 次提交</span><span>已答对 " + Q.score + "</span></div>" +
+    '<p class="qprompt">' + esc(q.prompt) + "</p>" + body + "</div>";
+}
+
+function render() {
+  const active = document.activeElement;
+  const control = active?.matches("[data-act]") ? { ...active.dataset } : null;
+  $("#mode-learn").setAttribute("aria-pressed", String(S.mode === "learn"));
+  $("#mode-quiz").setAttribute("aria-pressed", String(S.mode === "quiz"));
+  $("#quiz").innerHTML = S.mode === "quiz" ? quizHTML() : "";
+  const rows = visibleRows();
+  const scroll = $("#sequence-scroll");
+  const { scrollTop, scrollLeft } = scroll;
+  $("#seq").innerHTML = sequenceHTML(rows);
+  $("#step-detail").innerHTML = S.open ? detailHTML(cur().rows[S.open.q - 1]) : "";
+  scroll.scrollTop = scrollTop;
+  scroll.scrollLeft = scrollLeft;
+  if (active && !active.isConnected && control) {
+    const same = [...document.querySelectorAll("[data-act]")].find((el) =>
+      !el.disabled && Object.entries(control).every(([key, value]) => el.dataset[key] === value));
+    same?.focus({ preventScroll: true });
+  }
+}
+
+function startQuiz() { S.q = { i: 0, score: 0, finished: false }; loadQ(); }
+function loadQ() { Object.assign(S.q, { answered: false, chosen: [], ok: false, revealed: false, picked: null, err: false }); S.open = null; render(); }
+function openDefault() { const d = DEFAULT_OPEN[cur().id]; S.open = d ? { q: d.q, i: d.i } : null; }
+
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("[data-act]");
+  if (!a) return;
+  const act = a.dataset.act;
+  if (act === "write") {
+    const q = Number(a.dataset.q), i = Number(a.dataset.i), x = cur().rows[q - 1].x[i];
+    if (S.mode === "quiz" && S.q && !S.q.finished && !S.q.answered && curQ().kind === "pick" && x.key) {
+      Object.assign(S.q, { answered: true, picked: x.key, ok: x.key === curQ().answer });
+      if (S.q.ok) S.q.score++;
+    }
+    S.open = { ...S.open, q, i, ref: null, refAt: null };
+    render();
+    if (S.mode === "quiz" && S.q?.answered && !S.q.finished && curQ().kind === "pick") $("#quiz .fb")?.scrollIntoView({block:"nearest"});
+  } else if (act === "event" || act === "db") {
+    const q = Number(a.dataset.q);
+    const event = act === "event" ? Number(a.dataset.e) : null;
+    const triggered = event !== null ? EVENT_ROWS[S.sc][q - 1][event] : null;
+    S.open = { q, i: 0, event, runtimeAt: triggered && !triggered.after && q > 1 ? q - 1 : q };
+    render();
+    showStep();
+  } else if (act === "article-step") {
+    e.preventDefault();
+    S.mode = "learn";
+    S.open = { q: Number(a.dataset.q), i: 0 };
+    render();
+    $("#timeline").scrollIntoView({block:"start"});
+    showStep(true);
+    $('.sequence-group[data-step="' + S.open.q + '"] button[data-act="db"]')?.focus({preventScroll:true});
+  } else if (act === "step") {
+    const q = S.open.q + Number(a.dataset.dir);
+    if (q < 1 || q > visibleRows().length) return;
+    S.open = { q, i: 0 };
+    render();
+    showStep(true);
+    if (document.activeElement === document.body) {
+      $('#commit-inspector [data-act="step"]:not(:disabled)')?.focus({ preventScroll: true });
+    }
+  } else if (act === "sample") {
+    S.open.runtimeAt = Number(a.dataset.at);
+    render();
+  } else if (act === "ref") {
+    const at = a.dataset.at ? Number(a.dataset.at) : S.open.q;
+    const state = COMMIT_INDEXES[S.sc][at];
+    if (!state.has(a.dataset.ref)) return;
+    Object.assign(S.open, { i: -1, ref: a.dataset.ref, refAt: at });
+    render();
+    $("#commit-inspector .record-view")?.focus({ preventScroll: true });
+  } else if (act === "back-to-diagram") {
+    const chosen = $('.sequence-group[data-step="' + S.open.q + '"] button[aria-pressed="true"]');
+    if (chosen) chosen.focus({preventScroll: true});
+    $("#sequence-scroll").scrollIntoView({block:"start",inline:"nearest"});
+    showStep(true);
+  }
+  else if (act === "mode") { S.mode = a.dataset.mode; if (S.mode === "quiz") startQuiz(); else { openDefault(); render(); } }
+  else if (act === "submit") {
+    const chosen = Array.from(document.querySelectorAll('input[name="q"]:checked')).map((x) => +x.value);
+    if (!chosen.length) { S.q.err = true; const el = $("#qerr"); if (el) el.hidden = false; return; }
+    const want = [].concat(curQ().answer).slice().sort().join(",");
+    Object.assign(S.q, { chosen, answered: true, err: false, ok: chosen.slice().sort().join(",") === want });
+    if (S.q.ok) S.q.score++;
+    render();
+  }
+  else if (act === "giveup") { Object.assign(S.q, { answered: true, ok: false, picked: null }); render(); }
+  else if (act === "reveal") { S.q.revealed = true; S.open = { q: curQ().step + 1, i: -1 }; render(); }
+  else if (act === "nextq") { if (S.q.i >= cur().quiz.length - 1) { S.q.finished = true; render(); } else { S.q.i++; loadQ(); } }
+  else if (act === "restart") startQuiz();
+});
+document.addEventListener("change", (e) => {
+  if (e.target.name !== "q" || !S.q) return;
+  S.q.chosen = Array.from(document.querySelectorAll('input[name="q"]:checked')).map((input) => Number(input.value));
+  S.q.err = false;
+  const message = $("#qerr");
+  if (message) message.hidden = true;
+});
+
+openDefault();
+render();
+showStep(true);

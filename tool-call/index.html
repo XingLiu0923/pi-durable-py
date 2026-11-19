@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="跟着一次 get_weather 调用，区分模型提出的工具请求、Durable 写入的执行意图和工具最终返回的结果。">
+  <title>调用工具 · pi-durable 学习笔记</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+  <link rel="stylesheet" href="../lesson.css">
+  <script defer src="../lesson.js"></script>
+</head>
+<body data-scenario="tools">
+  <main class="app lesson">
+    <div class="lesson-masthead">
+      <a class="journey-title" href="../"><code>pi-durable</code> 学习笔记</a>
+      <nav class="lesson-nav" aria-label="学习文章"><a href="../">一问一答</a><a href="../tool-call/" aria-current="page">调用工具</a><a href="../busy-inbox/">忙时追问</a><a href="../subagent/">子 Agent</a></nav>
+    </div>
+    <article>
+      <header class="lesson-hero">
+        <p class="lesson-count">场景 2 / 4</p>
+        <h1>调用工具</h1>
+        <p class="lesson-summary">跟着一次 get_weather 调用，区分模型提出的工具请求、Durable 写入的执行意图和工具最终返回的结果。</p>
+        <div class="lesson-jumps"><a href="#timeline">看时序图 ↓</a><a href="#source">看关键代码 ↓</a></div>
+      </header>
+      <section class="lesson-story" aria-labelledby="story-heading">
+        <h2 id="story-heading">发生了什么</h2>
+        <ol><li><h3>把工具调用变成可以调度的任务</h3><p>模型先返回 tool_calls，同一次提交保存 assistant Entry #5、创建工具 Task #6，并把生成 Task #4 标为 waiting，等待 #6 进入终态。等待期间，#4 不需要占用一个一直运行的 Invocation。</p></li><li><h3>先保存执行意图，再调工具</h3><p>工具 Task #6 在调用 get_weather 前，先提交 execute checkpoint，把参数和 replay 策略存起来。工具返回后，再提交 tool-result Entry #7，把 #6 标为终态并在 outcome 中记录 entry_id: 7。</p></li><li><h3>依赖满足后继续生成</h3><p>Scheduler 重新领走 #4，#4 读取工具结果并创建新的生成 Task #8。pi.live.run.task_id 也切到 #8，原来的 Submission #2 继续等待这个新的生成任务给出最终答案。</p></li></ol>
+      </section>
+      <section class="lesson-timeline" id="timeline" aria-labelledby="timeline-heading">
+        <div class="figure-head">
+          <h2 id="timeline-heading">组件时序图</h2>
+          <div class="seg" aria-label="时序图模式">
+            <button type="button" data-act="mode" data-mode="learn" id="mode-learn">看时序图</button>
+            <button type="button" data-act="mode" data-mode="quiz" id="mode-quiz">做练习</button>
+          </div>
+        </div>
+        <p class="figure-guide">点箭头看当时的运行状态和写入的数据。虚线是组件调用，指向 DB 的实线是一批存储写入。</p>
+        <div id="quiz"></div>
+        <div class="flow-shell">
+          <div id="sequence-scroll" class="sequence-scroll" role="region" aria-label="组件调用及 DB 写入时序" tabindex="0"><div class="sequence-inner" id="seq"></div></div>
+          <div class="sequence-inspector" id="step-detail"></div>
+        </div>
+        <p class="source">数据来自 Python 教学版的一次运行，使用模拟模型和 MemoryStorage。DB 表示存储层。组件调用由代码和写入顺序还原，运行状态只在提交发布时采样。</p>
+      </section>
+      <section class="lesson-source" id="source" aria-labelledby="source-heading">
+        <h2 id="source-heading">提交意图、执行、提交结果</h2>
+        <p><a href="#timeline" data-act="article-step" data-q="7">第 7 次提交</a>对应 _set_slot()，工具调用在它返回之后发生。<a href="#timeline" data-act="article-step" data-q="8">第 8 次提交</a>由 _commit_result() 写入工具结果。</p>
+        <figure class="code-sample">
+          <figcaption><a href="https://github.com/XingLiu0923/pi-durable-py/blob/7051583651d2053aea634a9970b3d3f05fd1b451/pi_durable/harness/tool.py#L158-L164">pi_durable/harness/tool.py:158</a></figcaption>
+          <pre><code># ① 提交意图（之后崩溃 → 恢复时走 execute 阶段）
+await _set_slot(rt, call[&quot;id&quot;], &quot;running&quot;,
+                running({&quot;phase&quot;: &quot;execute&quot;, &quot;arguments&quot;: arguments, &quot;replay&quot;: tool.replay}))
+# ② 执行外部副作用
+result = await _execute(rt, tool, call, arguments)
+# ③ 提交结果
+await _commit_result(rt, task, call, result)</code></pre>
+        </figure>
+      </section>
+      <aside class="lesson-question">
+        <h2>读完想一想</h2><p>如果只看到<a href="#timeline" data-act="article-step" data-q="7">第 7 次提交</a>的 execute checkpoint，还没有<a href="#timeline" data-act="article-step" data-q="8">第 8 次提交</a>的 tool-result Entry，你能确定工具已经执行完成吗？</p>
+      </aside>
+      <nav class="lesson-footer" aria-label="继续学习"><a class="next-article" data-next-article href="../busy-inbox/"><small>下一篇</small><strong>忙时追问怎样进入对话 →</strong></a></nav>
+    </article>
+  </main>
+</body>
+</html>

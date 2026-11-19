@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="同一个会话正在跑工具时，steer 可以加入当前一轮，followUp 会等当前一轮回答完。沿着两条 Submission 就能看清它们何时从队列进入模型上下文。">
+  <title>忙时追问怎样进入对话 · pi-durable 学习笔记</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+  <link rel="stylesheet" href="../lesson.css">
+  <script defer src="../lesson.js"></script>
+</head>
+<body data-scenario="inbox">
+  <main class="app lesson">
+    <div class="lesson-masthead">
+      <a class="journey-title" href="../"><code>pi-durable</code> 学习笔记</a>
+      <nav class="lesson-nav" aria-label="学习文章"><a href="../">一问一答</a><a href="../tool-call/">调用工具</a><a href="../busy-inbox/" aria-current="page">忙时追问</a><a href="../subagent/">子 Agent</a></nav>
+    </div>
+    <article>
+      <header class="lesson-hero">
+        <p class="lesson-count">场景 3 / 4</p>
+        <h1>忙时追问怎样进入对话</h1>
+        <p class="lesson-summary">同一个会话正在跑工具时，steer 可以加入当前一轮，followUp 会等当前一轮回答完。沿着两条 Submission 就能看清它们何时从队列进入模型上下文。</p>
+        <div class="lesson-jumps"><a href="#timeline">看时序图 ↓</a><a href="#source">看关键代码 ↓</a></div>
+      </header>
+      <section class="lesson-story" aria-labelledby="story-heading">
+        <h2 id="story-heading">发生了什么</h2>
+        <ol><li><h3>工具执行时，两条输入先入队</h3><p>第 8、9 次提交时，build 工具仍在执行。两条输入分别建成 queued 的 Submission #7（steer）和 #8（followUp），内容先写进 pi.inbox，还没有用户 Entry。</p></li><li><h3>工具结束，steer 加入本轮</h3><p><a href="#timeline" data-act="article-step" data-q="13">第 13 次提交</a>在 postTools 边界取出 #7，写成用户 Entry #12，把 #7 改成 placed。新的 generation Task #13 接手当前 run，同时处理原始输入 #2 和追问 #7。</p></li><li><h3>本轮回答后，followUp 开启下一轮</h3><p><a href="#timeline" data-act="article-step" data-q="16">第 16 次提交</a>写入回答 Entry #14，把 #2 和 #7 都结算为 done；同一批写入也将 #8 变为 placed，创建用户 Entry #15 和下一轮的 Task #16。<a href="#timeline" data-act="article-step" data-q="19">第 19 次提交</a>才写入 #8 的回答。</p></li></ol>
+      </section>
+      <section class="lesson-timeline" id="timeline" aria-labelledby="timeline-heading">
+        <div class="figure-head">
+          <h2 id="timeline-heading">组件时序图</h2>
+          <div class="seg" aria-label="时序图模式">
+            <button type="button" data-act="mode" data-mode="learn" id="mode-learn">看时序图</button>
+            <button type="button" data-act="mode" data-mode="quiz" id="mode-quiz">做练习</button>
+          </div>
+        </div>
+        <p class="figure-guide">点箭头看当时的运行状态和写入的数据。虚线是组件调用，指向 DB 的实线是一批存储写入。</p>
+        <div id="quiz"></div>
+        <div class="flow-shell">
+          <div id="sequence-scroll" class="sequence-scroll" role="region" aria-label="组件调用及 DB 写入时序" tabindex="0"><div class="sequence-inner" id="seq"></div></div>
+          <div class="sequence-inspector" id="step-detail"></div>
+        </div>
+        <p class="source">数据来自 Python 教学版的一次运行，使用模拟模型和 MemoryStorage。DB 表示存储层。组件调用由代码和写入顺序还原，运行状态只在提交发布时采样。</p>
+      </section>
+      <section class="lesson-source" id="source" aria-labelledby="source-heading">
+        <h2 id="source-heading">在两个处理时机挑选队列项</h2>
+        <p>这段逻辑决定从 pi.inbox 拿哪些项。示例的 postTools 阶段只取出 steer；源码也指出，若队列里有 reset，这个阶段也会挑选 followUp。</p>
+        <figure class="code-sample">
+          <figcaption><a href="https://github.com/XingLiu0923/pi-durable-py/blob/7051583651d2053aea634a9970b3d3f05fd1b451/pi_durable/harness/submissions.py#L114-L118">pi_durable/harness/submissions.py:114</a></figcaption>
+          <pre><code>writes = [i for i in items if i[&quot;mode&quot;] == &quot;write&quot;]
+reset = any(w[&quot;entry&quot;].get(&quot;head&quot;) is not None for w in writes)
+steers = pick(&quot;steer&quot;, &quot;steering_mode&quot;)
+# 在 postTools 边界放置 reset 时，它的行为等同 final：也会选出 followUp
+follow_ups = pick(&quot;followUp&quot;, &quot;follow_up_mode&quot;) if boundary == &quot;final&quot; or reset else []</code></pre>
+        </figure>
+      </section>
+      <aside class="lesson-question">
+        <h2>读完想一想</h2><p><a href="#timeline" data-act="article-step" data-q="13">第 13 次提交</a>完成后，如果马上发起下一次模型请求，Entry #12 和 Submission #8 哪一个会进入这次请求的上下文？在图里找出依据。</p>
+      </aside>
+      <nav class="lesson-footer" aria-label="继续学习"><a class="next-article" data-next-article href="../subagent/"><small>下一篇</small><strong>子 Agent 怎样接活并把结果传回来 →</strong></a></nav>
+    </article>
+  </main>
+</body>
+</html>
