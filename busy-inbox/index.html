@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
-  <link rel="stylesheet" href="../lesson.css?v=runtime-json">
-  <script defer src="../lesson.js?v=runtime-json"></script>
+  <link rel="stylesheet" href="../lesson.css?v=storage-fields">
+  <script defer src="../lesson.js?v=storage-fields"></script>
 </head>
 <body data-scenario="inbox">
   <main class="app lesson">
@@ -36,7 +36,7 @@
             <button type="button" data-act="mode" data-mode="quiz" id="mode-quiz">做练习</button>
           </div>
         </div>
-        <p class="figure-guide">点箭头看当时的运行状态和写入的数据。虚线是组件调用，指向 DB 的实线是一批存储写入。</p>
+        <p class="figure-guide">虚线是组件调用。指向 DB 的实线是一批存储写入，点开可按表查看字段变化和 SQLite 代码。</p>
         <div id="quiz"></div>
         <div class="flow-shell">
           <div id="sequence-scroll" class="sequence-scroll" role="region" aria-label="组件调用及 DB 写入时序" tabindex="0"><div class="sequence-inner" id="seq"></div></div>

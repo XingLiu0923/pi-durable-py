@@ -417,44 +417,156 @@ function runtimeHTML(row, stored) {
     '</section>';
 }
 
-function recordHTML(r, state) {
-  const selectedAt = S.open.refAt ?? r.q;
-  const recordState = COMMIT_INDEXES[S.sc][selectedAt];
+const SQLITE_SNIPPETS = {"conversations": {"first": 63, "last": 64, "code": "value = write[\"value\"]\ndb.execute(\"INSERT INTO conversations VALUES (?, ?)\", (value[\"id\"], json.dumps(value)))"}, "entries": {"first": 66, "last": 70, "code": "value = write[\"value\"]\ndb.execute(\n    \"INSERT INTO entries VALUES (?, ?, ?)\",\n    (value[\"id\"], value[\"conversation_id\"], json.dumps(value)),\n)"}, "tasks": {"first": 72, "last": 76, "code": "value = write[\"value\"]\ndb.execute(\n    \"INSERT OR REPLACE INTO tasks VALUES (?, ?, ?)\",\n    (value[\"id\"], value[\"state\"][\"status\"], json.dumps(value)),\n)"}, "submissions": {"first": 78, "last": 82, "code": "value = write[\"value\"]\ndb.execute(\n    \"INSERT OR REPLACE INTO submissions VALUES (?, ?, ?, ?)\",\n    (value[\"id\"], value[\"conversation_id\"], value.get(\"request_id\"), json.dumps(value)),\n)"}, "documents": {"first": 84, "last": 87, "code": "db.execute(\n    \"INSERT OR REPLACE INTO documents VALUES (?, ?, ?)\",\n    (write[\"kind\"], write[\"key\"], json.dumps(write[\"value\"])),\n)"}, "retire": {"first": 89, "last": 89, "code": "db.execute(\"DELETE FROM documents WHERE key = ?\", (write[\"key\"],))"}};
+
+const STORAGE_TABLES = ["conversations", "submissions", "entries", "tasks", "documents"];
+const STORAGE_SOURCE = "https://github.com/XingLiu0923/pi-durable-py/blob/7051583651d2053aea634a9970b3d3f05fd1b451/pi_durable/storage/sqlite.py";
+const ABSENT = Symbol("absent");
+
+function previewValue(value) {
+  if (value === ABSENT) return "无此字段";
+  const json = JSON.stringify(value);
+  return json.length > 85 ? json.slice(0, 84) + "…" : json;
+}
+
+function fieldValues(before, after, compare = before !== ABSENT) {
+  const value = (v) => '<code class="field-value">' + esc(previewValue(v)) + '</code>';
+  return !compare
+    ? value(after)
+    : value(before) + '<span class="field-arrow" aria-label="变为">→</span>' + value(after);
+}
+
+function fieldChanges(before, after, prefix = "") {
+  if (JSON.stringify(before) === JSON.stringify(after)) return [];
+  const object = (v) => v && typeof v === "object" && !Array.isArray(v);
+  if (object(before) && object(after)) {
+    const keys = new Set([...Object.keys(after), ...Object.keys(before)]);
+    return [...keys].flatMap((key) => {
+      const path = /^[a-zA-Z_$][\w$]*$/.test(key) ? (prefix ? prefix + "." : "") + key
+        : prefix + "[" + JSON.stringify(key) + "]";
+      return fieldChanges(
+        Object.hasOwn(before, key) ? before[key] : ABSENT,
+        Object.hasOwn(after, key) ? after[key] : ABSENT,
+        path
+      );
+    });
+  }
+  return [{ path: prefix, before, after }];
+}
+
+function recordFields(item, previous) {
+  const updates = previous ? fieldChanges(previous.a, item.a)
+    : Object.entries(item.a).map(([path, after]) => ({path, before: ABSENT, after}));
+  const label = previous ? "记录字段发生了什么变化" : "新记录里写了哪些字段";
+  const diff = updates.map(({path,before,after}) => '<dt><code>' + esc(path) +
+    '</code></dt><dd>' + fieldValues(before, after, Boolean(previous)) + '</dd>').join("");
+  return '<section class="storage-fields"><h4>' + label + '</h4>' +
+    (diff ? '<dl class="field-list">' + diff + '</dl>' : '<p class="muted">展示的字段没有变化。</p>') + '</section>';
+}
+
+function sqliteColumns(item) {
+  const a = item.a;
+  switch (item.c) {
+    case 0: return [["id", a.id]];
+    case 1: return [["id", a.id], ["conversation_id", a.conversation_id], ["request_id", a.request_id ?? null]];
+    case 2: return [["id", a.id], ["conversation_id", a.conversation_id]];
+    case 3: return [["id", a.id], ["status", a.state.status]];
+    case 4: {
+      const [kind, key] = item.key.slice("doc:".length).split("@");
+      return [["kind", kind], ["key", key]];
+    }
+  }
+  return [];
+}
+
+function sqliteDetail(item, previous, beforeCommit) {
+  const cleanup = item.n === 2;
+  const source = SQLITE_SNIPPETS[cleanup ? "retire" : STORAGE_TABLES[item.c]];
+  const href = STORAGE_SOURCE + "#L" + source.first + (source.last === source.first ? "" : "-L" + source.last);
+  let columns = "", note;
+  if (cleanup) {
+    const prefix = "@" + item.a.retire;
+    const matches = [...beforeCommit.keys()].filter((key) => key.startsWith("doc:") && key.endsWith(prefix));
+    note = matches.length
+      ? '按 <code>key</code> 删除这个范围下的 ' + matches.length + ' 条 Document。'
+      : '按 <code>key</code> 查找任务文档。这一步没有匹配的行。';
+    columns = '<dt><code>WHERE key</code></dt><dd>' + fieldValues(ABSENT, item.a.retire) + '</dd>';
+  } else {
+    const beforeCols = new Map(previous ? sqliteColumns(previous) : []);
+    columns = sqliteColumns(item).map(([column, after]) => {
+      const before = beforeCols.has(column) ? beforeCols.get(column) : ABSENT;
+      return '<dt><code>' + esc(column) + '</code></dt><dd>' +
+        fieldValues(Object.is(before, after) ? ABSENT : before, after) + '</dd>';
+    }).join("");
+    columns += '<dt><code>json</code></dt><dd>保存整条记录</dd>';
+    note = item.c === 3
+      ? '整条 Task 存进 <code>json</code>，<code>state.status</code> 也单独写进 <code>status</code> 列，便于按状态查询。'
+      : '其余字段随整条记录保存在 <code>json</code> 列中。';
+  }
+  return '<section class="sqlite-section"><h4>' + (cleanup ? 'SQLite 删除条件' : 'SQLite 存储列') + '</h4><dl class="field-list">' + columns + '</dl>' +
+    '<p class="tip">' + note + '</p><details class="sqlite-code" open><summary>查看 SQLite 写入代码</summary>' +
+    '<div class="sqlite-code-body"><pre><code>' + esc(source.code) + '</code></pre>' +
+    '<a class="source-link" href="' + href + '">sqlite.py:' + source.first + '</a></div></details></section>';
+}
+
+function recordHTML(row, state) {
+  const selectedAt = S.open.refAt ?? row.q;
+  const versions = COMMIT_INDEXES[S.sc];
+  const recordState = versions[selectedAt];
   const selected = S.open.ref ? recordState.get(S.open.ref) : null;
-  const pickAnswer = S.mode === "quiz" && S.q?.answered && !S.q.finished && curQ().kind === "pick" ? curQ().answer : null;
   const index = S.open.i;
-  const x = selected ? selected.item : r.x[index];
-  const atoms = r.x.map((item, j) =>
-    '<button type="button" class="atom c' + item.c + " " + chipCls(item) + (!selected && index === j ? " on" : "") + (pickAnswer && pickAnswer === item.key ? " pick-answer" : "") +
-    '" aria-pressed="' + (!selected && index === j) + '" data-act="write" data-q="' + r.q + '" data-i="' + j + '">' +
-    (item.n === 2 ? "" : item.n ? "新增 " : "修改 ") + esc(item.t) + '</button>'
+  const item = selected ? selected.item : row.x[index];
+  const pickAnswer = S.mode === "quiz" && S.q?.answered && !S.q.finished && curQ().kind === "pick"
+    ? curQ().answer : null;
+  const groups = new Map();
+  for (const [i, write] of row.x.entries()) {
+    const table = STORAGE_TABLES[write.c];
+    const on = !selected && index === i;
+    const operation = write.n === 2 ? "" : write.n ? "新增 " : "更新 ";
+    const button = '<button type="button" class="atom c' + write.c + ' ' + chipCls(write) +
+      (on ? " on" : "") + (pickAnswer && pickAnswer === write.key ? " pick-answer" : "") +
+      '" aria-pressed="' + on + '" data-act="write" data-q="' + row.q + '" data-i="' + i + '">' +
+      operation + esc(write.t) + '</button>';
+    if (!groups.has(table)) groups.set(table, []);
+    groups.get(table).push(button);
+  }
+  const writes = [...groups].map(([table, buttons]) =>
+    '<div class="storage-group"><code>' + esc(table) + '</code><div class="atoms">' + buttons.join("") + '</div></div>'
   ).join("");
-  const documents = [...state.values()].filter(({ item }) => item.c === 4);
-  const docLinks = documents.map(({ item }) => {
-    const address = item.key.split("@").at(-1);
-    const role = DOC_ROLES[item.t]?.[0];
-    return refButton(item.key, item.t + " · " + address + (role ? " · " + role : ""));
+
+  const docLinks = [...state.values()].filter((v) => v.item.c === 4).map(({item: doc}) => {
+    const address = doc.key.split("@").at(-1);
+    const role = DOC_ROLES[doc.t]?.[0];
+    return refButton(doc.key, doc.t + " · " + address + (role ? " · " + role : ""));
   }).join("");
-  let record = '<p class="muted">选择一次写入，或查看本步骤仍存在的文档。</p>';
-  if (x) {
-    const title = x.n === 2 ? x.t : recordTitle(x);
-    const tip = x.n === 2 ? TIP.retire : DOC_ROLES[x.t]?.[1] || TIP[x.c];
-    const wasWritten = !selected || (selectedAt === r.q && selected.row === r.q);
-    const raw = x.n === 2 ? "" : '<div class="cols">' +
-      (wasWritten && x.b && Object.keys(x.b).length ?
-        '<div><div class="lb">改之前（变化字段）</div><pre>' + pj(x.b) + '</pre></div>' : "") +
-      '<div><div class="lb">' + (wasWritten ? "写入值（节选）" : "此时的存储值（节选）") + '</div><pre>' + pj(x.a) + '</pre></div></div>';
-    const links = recordLinks(x, recordState);
+
+  let record = '<p class="muted">选中一条写入，查看字段和对应的 SQLite 代码。</p>';
+  if (item) {
+    const writtenAt = selected?.row ?? row.q;
+    const beforeCommit = versions[writtenAt - 1];
+    const previous = item.key && beforeCommit.get(item.key)?.item;
+    const title = item.n === 2 ? item.a.retire : recordTitle(item);
+    const action = item.n === 2 ? "清理" : previous ? "更新" : "新增";
+    const explanation = item.n === 2 ? "" : DOC_ROLES[item.t]?.[1] || TIP[item.c];
+    const earlier = selected && writtenAt !== row.q
+      ? '<span>此版本写于第 ' + writtenAt + ' 次提交</span>' : "";
+    const links = recordLinks(item, recordState);
     const related = links.length ? '<div class="relations"><h4>关联字段</h4><div class="ref-list">' +
-      links.map(({ field, key }) => refButton(key, recordTitle(recordState.get(key).item), field, selectedAt)).join("") +
+      links.map(({field,key}) => refButton(key, recordTitle(recordState.get(key).item), field, selectedAt)).join("") +
       '</div></div>' : "";
-    record = '<div class="record-view" tabindex="-1"><div class="record-title"><h4>' + esc(title) +
-      '</h4>' + (!wasWritten ? '<span>第 ' + selectedAt + ' 次提交后 · 最后写于第 ' + selected.row + ' 次</span>' : "") + '</div>' +
-      (tip ? '<p class="tip">' + esc(tip) + '</p>' : "") + related + raw + '</div>';
+    const raw = item.n === 2 ? "" : '<details class="sqlite-code"><summary>查看记录 JSON（录制节选）</summary>' +
+      '<pre><code>' + pj(item.a) + '</code></pre></details>';
+    record = '<div class="record-view storage-explanation" tabindex="-1"><div class="record-title"><h4><code>' +
+      esc(STORAGE_TABLES[item.c]) + '</code> · ' + esc(action + " " + title) + '</h4>' + earlier + '</div>' +
+      (explanation ? '<p class="tip">' + esc(explanation) + '</p>' : '') +
+      (item.n === 2 ? "" : recordFields(item, previous)) +
+      sqliteDetail(item, previous, beforeCommit) + related + raw + '</div>';
   }
   return '<section class="observe-pane storage-pane" aria-label="持久化记录">' +
-    '<div class="pane-title"><h3>持久化记录</h3><span>本次提交 · ' + r.x.length + ' 项</span></div>' +
-    '<div class="atoms">' + atoms + '</div>' + record +
+    '<div class="pane-title"><h3>持久化记录</h3><span>本次提交 · ' + row.x.length + ' 项</span></div>' +
+    '<p class="pane-note">运行录自 <code>MemoryStorage</code>。下方按 SQLite 的表结构标出同一批写入。</p>' +
+    '<div class="storage-groups">' + writes + '</div>' + record +
+    '<p class="pane-note">同一事务也会把 <code>meta</code> 表里 <code>key=\'seq\'</code> 的 <code>value</code> 加 1。</p>' +
     (docLinks ? '<div class="document-links"><h4>提交后已有的文档</h4><div class="ref-list">' + docLinks + '</div></div>' : '') +
     '</section>';
 }
