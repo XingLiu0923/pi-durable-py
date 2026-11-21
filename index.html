@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
-  <link rel="stylesheet" href="./lesson.css?v=storage-json">
-  <script defer src="./lesson.js?v=storage-json"></script>
+  <link rel="stylesheet" href="./lesson.css?v=guided-learning">
+  <script defer src="./lesson.js?v=guided-learning"></script>
 </head>
 <body data-scenario="basic">
   <main class="app lesson">
@@ -24,6 +24,21 @@
         <p class="lesson-summary">用户问了一句，框架怎样把问题交给模型，再把回答交回来？沿着这一次请求，看看消息和执行状态分别存在哪里。</p>
         <div class="lesson-jumps"><a href="#timeline">看时序图 ↓</a><a href="#source">看关键代码 ↓</a></div>
       </header>
+      <section class="core-models" aria-label="数据结构速查">
+        <details open>
+          <summary>先认清五种记录</summary>
+          <p class="core-intro">同一个会话里，请求的处理结果、消息内容和执行进度各有对应记录。记录通过 ID 或文档地址连起来。</p>
+          <dl class="model-reference">
+            <div><dt>Conversation</dt><dd>这段对话的归属范围。</dd><dd class="model-example">其他记录用 conversation_id 指向它。</dd></div>
+            <div><dt>Submission</dt><dd>一次输入处理到哪了，回答在哪里。</dd><dd class="model-example">entry 指向输入，answer 指向回答。</dd></div>
+            <div><dt>Entry</dt><dd>已经写下的一条消息。</dd><dd class="model-example">用户问题、模型回复、工具结果。</dd></div>
+            <div><dt>Task</dt><dd>一项工作执行到哪一步。</dd><dd class="model-example">state 保存状态和 checkpoint；结束后保存 outcome。</dd></div>
+            <div><dt>Document</dt><dd>会话的配置和可变状态。</dd><dd class="model-example">kind 指明用途，key 指明属于谁。</dd></div>
+          </dl>
+          <p class="doc-roles"><code>pi.agent</code> 保存模型与工具配置 · <code>pi.live</code> 保存当前 run 和进度 · <code>pi.inbox</code> 保存排队输入 · <code>pi.usage</code> 累计用量。</p>
+          <p class="runtime-orientation">页面的 <code>_live</code> 是 Scheduler 在内存里的未结束任务索引，<code>_docs</code> 是 Document 缓存。它们根据存储记录建立；<code>Invocation</code> 保存一次调用的代码引用和异步执行信息。</p>
+        </details>
+      </section>
       <section class="lesson-story" aria-labelledby="story-heading">
         <h2 id="story-heading">发生了什么</h2>
         <ol><li><h3>为会话保存配置</h3><p>先创建会话 #1，并同时保存它的 pi.agent 配置。c:1 表示这份配置属于会话 #1，里面指定用叫 fake 的模拟模型。</p></li><li><h3>接收输入，再启动任务</h3><p>同一批写入会记录请求回执（Submission #2）、用户消息（Entry #3）和待执行的 Task #4。Scheduler 先把任务写成 running，再真正开始执行。</p></li><li><h3>保存答案，结算 Submission</h3><p>模型给出回答后，框架保存回答，把 Submission #2 标成 done，并更新 Task 状态。之后，沿着回执的 entry 和 answer 两个字段，就能分别找到原问题和回答。</p></li></ol>
@@ -37,6 +52,7 @@
           </div>
         </div>
         <p class="figure-guide">虚线是组件调用。指向 DB 的实线是一批存储写入，点开可按表查看字段变化和写入的 JSON。</p>
+        <div id="reading-guide"></div>
         <div id="quiz"></div>
         <div class="flow-shell">
           <div id="sequence-scroll" class="sequence-scroll" role="region" aria-label="组件调用及 DB 写入时序" tabindex="0"><div class="sequence-inner" id="seq"></div></div>
@@ -58,9 +74,7 @@ for invocation in started:
     self._start(invocation)</code></pre>
         </figure>
       </section>
-      <aside class="lesson-question">
-        <h2>读完想一想</h2><p>在<a href="#timeline" data-act="article-step" data-q="3">第 3 次提交</a>里，Task #4 已经是 running。你能从哪一栏判断它的 Invocation 是否已经开始？</p>
-      </aside>
+      <section class="lesson-check" id="lesson-check" aria-label="检查理解"></section>
       <nav class="lesson-footer" aria-label="继续学习"><a class="next-article" data-next-article href="./tool-call/"><small>下一篇</small><strong>调用工具 →</strong></a></nav>
     </article>
   </main>
