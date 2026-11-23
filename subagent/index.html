@@ -3,40 +3,256 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="主会话通过一个工具把工作交给子会话。两个会话各有自己的输入和回答，任务所有权把它们串在了一起。">
+  <meta name="description" content="主会话通过工具把工作交给子会话。两个会话各自维护独立的 Entry、Submission 和文档，而 Conversation.owner 把它们接入同一棵所有权树。">
   <title>子 Agent 怎样接活并把结果传回来 · pi-durable 学习笔记</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
-  <link rel="stylesheet" href="../lesson.css?v=guided-learning">
-  <script defer src="../lesson.js?v=guided-learning"></script>
+  <link rel="stylesheet" href="../lesson.css?v=20261123">
+  <script defer src="../lesson.js?v=20261123"></script>
 </head>
 <body data-scenario="subagent">
   <main class="app lesson">
     <div class="lesson-masthead">
       <a class="journey-title" href="../"><code>pi-durable</code> 学习笔记</a>
-      <nav class="lesson-nav" aria-label="学习文章"><a href="../">一问一答</a><a href="../tool-call/">调用工具</a><a href="../busy-inbox/">忙时追问</a><a href="../subagent/" aria-current="page">子 Agent</a></nav>
+      <nav class="lesson-nav" aria-label="学习文章"><a href="../" data-scene="basic">一问一答<span class="nav-check" aria-hidden="true">✓</span></a><a href="../tool-call/" data-scene="tools">调用工具<span class="nav-check" aria-hidden="true">✓</span></a><a href="../busy-inbox/" data-scene="inbox">忙时追问<span class="nav-check" aria-hidden="true">✓</span></a><a href="../subagent/" data-scene="subagent" aria-current="page">子 Agent<span class="nav-check" aria-hidden="true">✓</span></a><a href="../crash-recovery/" data-scene="crash">崩溃恢复<span class="nav-check" aria-hidden="true">✓</span></a><a href="../abort-tree/" data-scene="abort">中止传播<span class="nav-check" aria-hidden="true">✓</span></a></nav>
     </div>
     <article>
       <header class="lesson-hero">
-        <p class="lesson-count">场景 4 / 4</p>
+        <p class="lesson-count">场景 4 / 6</p>
         <h1>子 Agent 怎样接活并把结果传回来</h1>
-        <p class="lesson-summary">主会话通过一个工具把工作交给子会话。两个会话各有自己的输入和回答，任务所有权把它们串在了一起。</p>
-        <div class="lesson-jumps"><a href="#timeline">看时序图 ↓</a><a href="#source">看关键代码 ↓</a></div>
+        <p class="lesson-summary">主会话通过工具把工作交给子会话。两个会话各自维护独立的 Entry、Submission 和文档，而 Conversation.owner 把它们接入同一棵所有权树。</p>
+        <div class="lesson-jumps">
+          <a href="#timeline">看时序图 ↓</a>
+          <a href="#source">看关键代码 ↓</a>
+          <a href="#practice">跑本地练习 ↓</a>
+        </div>
       </header>
-      <section class="core-models" aria-label="数据结构速查">
+      <section class="core-models" aria-label="数据结构与状态机速查">
         <details>
-          <summary>先认清五种记录</summary>
-          <p class="core-intro">同一个会话里，请求的处理结果、消息内容和执行进度各有对应记录。记录通过 ID 或文档地址连起来。</p>
+          <summary>全局速查：五种记录、引用关系与 Task 状态机</summary>
+          <p class="core-intro">同一个会话里，请求的处理结果、消息内容、执行进度和可变状态分别落在五种持久化记录中，靠 ID 与文档地址连成一张图。</p>
           <dl class="model-reference">
-            <div><dt>Conversation</dt><dd>这段对话的归属范围。</dd><dd class="model-example">其他记录用 conversation_id 指向它。</dd></div>
-            <div><dt>Submission</dt><dd>一次输入处理到哪了，回答在哪里。</dd><dd class="model-example">entry 指向输入，answer 指向回答。</dd></div>
-            <div><dt>Entry</dt><dd>已经写下的一条消息。</dd><dd class="model-example">用户问题、模型回复、工具结果。</dd></div>
-            <div><dt>Task</dt><dd>一项工作执行到哪一步。</dd><dd class="model-example">state 保存状态和 checkpoint；结束后保存 outcome。</dd></div>
-            <div><dt>Document</dt><dd>会话的配置和可变状态。</dd><dd class="model-example">kind 指明用途，key 指明属于谁。</dd></div>
+            <div><dt>Conversation</dt><dd>这段对话的归属范围。</dd><dd class="model-example">其他记录用 conversation_id 指向它；子会话用 owner 挂到父 Task。</dd></div>
+            <div><dt>Submission</dt><dd>一次输入处理到哪了，回答在哪里。</dd><dd class="model-example">entry 指向输入，answer 指向回答；状态为 queued / placed / done / unanswered。</dd></div>
+            <div><dt>Entry</dt><dd>已经写下的一条不可变消息。</dd><dd class="model-example">用户问题、模型回复、工具结果；永不修改，按序追加。</dd></div>
+            <div><dt>Task</dt><dd>一项持久化状态机的执行进度。</dd><dd class="model-example">state 保存状态与 checkpoint；结束后保存 outcome；restarts 与 abort_requested 支撑恢复和中止。</dd></div>
+            <div><dt>Document</dt><dd>会话的配置和可变状态。</dd><dd class="model-example">kind 指明用途，key（如 c:1）指明作用域。</dd></div>
           </dl>
-          <p class="doc-roles"><code>pi.agent</code> 保存模型与工具配置 · <code>pi.live</code> 保存当前 run 和进度 · <code>pi.inbox</code> 保存排队输入 · <code>pi.usage</code> 累计用量。</p>
-          <p class="runtime-orientation">页面的 <code>_live</code> 是 Scheduler 在内存里的未结束任务索引，<code>_docs</code> 是 Document 缓存。它们根据存储记录建立；<code>Invocation</code> 保存一次调用的代码引用和异步执行信息。</p>
+          <p class="doc-roles"><code>pi.agent</code> 保存模型与工具配置 · <code>pi.live</code> 保存当前 run、流式进度和工具槽位 · <code>pi.inbox</code> 保存忙时排队输入 · <code>pi.usage</code> 累计用量。</p>
+          <p class="runtime-orientation">页面左侧的 <code>_live</code> 是 Scheduler 在内存里的未结束任务索引，<code>_docs</code> 是 Document 缓存，它们都由存储记录重建；<code>Invocation</code> 保存正在执行的异步调用及其模式（<code>run</code> / <code>abort</code>）。</p>
+          <div class="mental-maps">
+            <div class="map-tabs" role="tablist" aria-label="架构速查图">
+              <button type="button" data-act="map-tab" data-map="data-model" aria-pressed="true">图 1 · 五种记录与文档如何互相引用</button>
+              <button type="button" data-act="map-tab" data-map="task-state" aria-pressed="false">图 2 · Task 持久化状态机与崩溃/中止路径</button>
+            </div>
+            <div class="map-panel" data-map-panel="data-model"><svg class="mental-svg" viewBox="0 0 920 286" role="img" aria-label="pi-durable 五种记录与四份文档的引用关系图" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="mm-arr-accent" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="var(--accent)"/>
+    </marker>
+    <marker id="mm-arr-task" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="var(--task)"/>
+    </marker>
+    <marker id="mm-arr-doc" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="var(--doc)"/>
+    </marker>
+    <marker id="mm-arr-muted" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="var(--muted)"/>
+    </marker>
+  </defs>
+
+  <!-- Conversation -->
+  <g transform="translate(16, 18)">
+    <rect width="176" height="82" rx="10" fill="var(--conv-soft)" stroke="var(--conv)" stroke-width="1.5"/>
+    <text x="14" y="25" class="svg-title" fill="var(--conv)">Conversation #1</text>
+    <text x="14" y="45" class="svg-sub">会话作用域（只写一次）</text>
+    <text x="14" y="65" class="svg-mono">owner? → {task_id}</text>
+  </g>
+
+  <!-- Submission -->
+  <g transform="translate(316, 18)">
+    <rect width="224" height="86" rx="10" fill="var(--sub-soft)" stroke="var(--sub)" stroke-width="1.5"/>
+    <text x="14" y="25" class="svg-title" fill="var(--sub)">Submission #2</text>
+    <text x="14" y="44" class="svg-sub">请求回执 · queued / placed / done</text>
+    <text x="14" y="62" class="svg-mono">entry → #3 · answer → #5</text>
+    <text x="14" y="77" class="svg-mono">request_id（幂等去重）</text>
+  </g>
+
+  <!-- Entry -->
+  <g transform="translate(674, 18)">
+    <rect width="230" height="86" rx="10" fill="var(--entry-soft)" stroke="var(--entry)" stroke-width="1.5"/>
+    <text x="14" y="25" class="svg-title" fill="var(--entry)">Entry #3 / #5 / #7</text>
+    <text x="14" y="44" class="svg-sub">不可变消息历史（只追加）</text>
+    <text x="14" y="62" class="svg-mono">pi.user · pi.assistant</text>
+    <text x="14" y="77" class="svg-mono">pi.tool-result · by_task_id</text>
+  </g>
+
+  <!-- Document -->
+  <g transform="translate(16, 148)">
+    <rect width="270" height="114" rx="10" fill="var(--doc-soft)" stroke="var(--doc)" stroke-width="1.5"/>
+    <text x="14" y="24" class="svg-title" fill="var(--doc)">Document · key = c:1</text>
+    <text x="14" y="45" class="svg-mono">pi.agent   模型与工具名配置</text>
+    <text x="14" y="64" class="svg-mono">pi.live    run.task_id · inputs · tools</text>
+    <text x="14" y="83" class="svg-mono">pi.inbox   忙时排队 items[]</text>
+    <text x="14" y="102" class="svg-mono">pi.usage   模型与工具累计用量</text>
+  </g>
+
+  <!-- Task Parent (generation) -->
+  <g transform="translate(390, 152)">
+    <rect width="212" height="106" rx="10" fill="var(--task-soft)" stroke="var(--task)" stroke-width="1.5"/>
+    <text x="14" y="24" class="svg-title" fill="var(--task)">Task #4 (generation)</text>
+    <text x="14" y="43" class="svg-sub">持久化状态机（每步存盘）</text>
+    <text x="14" y="62" class="svg-mono">state.checkpoint / outcome</text>
+    <text x="14" y="79" class="svg-mono">state.on: [6]（等待子任务）</text>
+    <text x="14" y="96" class="svg-mono">abort_requested · restarts</text>
+  </g>
+
+  <!-- Task Child (tool) -->
+  <g transform="translate(700, 152)">
+    <rect width="204" height="106" rx="10" fill="var(--task-soft)" stroke="var(--task)" stroke-width="1.5"/>
+    <text x="14" y="24" class="svg-title" fill="var(--task)">Task #6 (pi.tool)</text>
+    <text x="14" y="43" class="svg-sub">工具子任务（意图三明治）</text>
+    <text x="14" y="62" class="svg-mono">owner: 4（指向父任务）</text>
+    <text x="14" y="79" class="svg-mono">phase: call → execute</text>
+    <text x="14" y="96" class="svg-mono">replay: safe | unsafe</text>
+  </g>
+
+  <!-- Relation Arrows -->
+  <!-- Document c:1 -> Conversation -->
+  <path d="M 104 148 L 104 104" fill="none" stroke="var(--doc)" stroke-width="1.5" marker-end="url(#mm-arr-doc)"/>
+  <rect x="112" y="116" width="66" height="18" rx="4" fill="var(--panel)"/>
+  <text x="117" y="129" class="svg-edge" fill="var(--doc)">地址 c:1</text>
+
+  <!-- Submission -> Conversation -->
+  <path d="M 316 58 L 196 58" fill="none" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#mm-arr-muted)"/>
+  <rect x="206" y="34" width="100" height="18" rx="4" fill="var(--panel)"/>
+  <text x="256" y="47" text-anchor="middle" class="svg-edge">conversation_id</text>
+
+  <!-- Submission -> Entry -->
+  <path d="M 540 58 L 670 58" fill="none" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#mm-arr-accent)"/>
+  <rect x="556" y="34" width="98" height="18" rx="4" fill="var(--panel)"/>
+  <text x="605" y="47" text-anchor="middle" class="svg-edge" fill="var(--accent)">entry / answer</text>
+
+  <!-- Entry -> Task -->
+  <path d="M 730 104 L 730 126 L 548 126 L 548 148" fill="none" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#mm-arr-muted)"/>
+  <rect x="604" y="116" width="76" height="18" rx="4" fill="var(--panel)"/>
+  <text x="642" y="129" text-anchor="middle" class="svg-edge">by_task_id</text>
+
+  <!-- Document pi.live / pi.inbox -> Submission -->
+  <path d="M 286 168 L 352 168 L 352 108" fill="none" stroke="var(--doc)" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#mm-arr-doc)"/>
+  <rect x="304" y="122" width="96" height="18" rx="4" fill="var(--panel)"/>
+  <text x="352" y="135" text-anchor="middle" class="svg-edge" fill="var(--doc)">inputs / inbox</text>
+
+  <!-- Document pi.live -> Task #4 -->
+  <path d="M 286 210 L 386 210" fill="none" stroke="var(--doc)" stroke-width="1.6" marker-end="url(#mm-arr-doc)"/>
+  <rect x="294" y="187" width="84" height="18" rx="4" fill="var(--panel)"/>
+  <text x="336" y="200" text-anchor="middle" class="svg-edge" fill="var(--doc)">run.task_id</text>
+
+  <!-- Task #4 waiting on -> Task #6 -->
+  <path d="M 602 186 L 696 186" fill="none" stroke="var(--task)" stroke-width="1.6" marker-end="url(#mm-arr-task)"/>
+  <rect x="615" y="164" width="68" height="18" rx="4" fill="var(--panel)"/>
+  <text x="649" y="177" text-anchor="middle" class="svg-edge" fill="var(--task)">state.on</text>
+
+  <!-- Task #6 owner -> Task #4 -->
+  <path d="M 700 226 L 606 226" fill="none" stroke="var(--task)" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#mm-arr-task)"/>
+  <rect x="625" y="232" width="48" height="18" rx="4" fill="var(--panel)"/>
+  <text x="649" y="245" text-anchor="middle" class="svg-edge" fill="var(--task)">owner</text>
+
+  <!-- Subagent bridge note -->
+  <text x="460" y="278" text-anchor="middle" class="svg-footnote">跨会话桥接：子会话 Conversation #7.owner.task_id → 工具 Task #6（级联中止与收尾据此穿过会话边界）</text>
+</svg></div>
+            <div class="map-panel" data-map-panel="task-state" hidden><svg class="mental-svg" viewBox="0 0 920 224" role="img" aria-label="pi-durable Task 持久化状态机与崩溃恢复路径图" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="sm-arr-accent" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="var(--accent)"/>
+    </marker>
+    <marker id="sm-arr-task" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="var(--task)"/>
+    </marker>
+    <marker id="sm-arr-bad" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="var(--bad)"/>
+    </marker>
+    <marker id="sm-arr-ok" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="var(--ok)"/>
+    </marker>
+  </defs>
+
+  <!-- pending -->
+  <g transform="translate(20, 82)">
+    <rect width="128" height="60" rx="10" fill="var(--panel-2)" stroke="var(--conv)" stroke-width="1.5"/>
+    <text x="64" y="26" text-anchor="middle" class="svg-title" fill="var(--fg)">pending</text>
+    <text x="64" y="46" text-anchor="middle" class="svg-sub">等待调度预留</text>
+  </g>
+
+  <!-- running -->
+  <g transform="translate(248, 82)">
+    <rect width="156" height="60" rx="10" fill="var(--task-soft)" stroke="var(--task)" stroke-width="1.8"/>
+    <text x="78" y="26" text-anchor="middle" class="svg-title" fill="var(--task)">running</text>
+    <text x="78" y="46" text-anchor="middle" class="svg-sub">推进 phase / checkpoint</text>
+  </g>
+
+  <!-- waiting / sleeping -->
+  <g transform="translate(504, 14)">
+    <rect width="184" height="56" rx="10" fill="var(--sub-soft)" stroke="var(--sub)" stroke-width="1.5"/>
+    <text x="92" y="24" text-anchor="middle" class="svg-title" fill="var(--sub)">waiting / sleeping</text>
+    <text x="92" y="43" text-anchor="middle" class="svg-sub">等子任务或到点（不占调用）</text>
+  </g>
+
+  <!-- completing -->
+  <g transform="translate(504, 142)">
+    <rect width="184" height="56" rx="10" fill="var(--panel-2)" stroke="var(--muted)" stroke-width="1.5"/>
+    <text x="92" y="24" text-anchor="middle" class="svg-title" fill="var(--fg)">completing</text>
+    <text x="92" y="43" text-anchor="middle" class="svg-sub">结局已定，等子工作排空</text>
+  </g>
+
+  <!-- terminal -->
+  <g transform="translate(756, 82)">
+    <rect width="146" height="60" rx="10" fill="var(--ok-soft)" stroke="var(--ok)" stroke-width="1.6"/>
+    <text x="73" y="26" text-anchor="middle" class="svg-title" fill="var(--ok)">terminal</text>
+    <text x="73" y="46" text-anchor="middle" class="svg-sub">保存 outcome · 退场</text>
+  </g>
+
+  <!-- pending -> running -->
+  <path d="M 148 106 L 244 106" fill="none" stroke="var(--task)" stroke-width="1.6" marker-end="url(#sm-arr-task)"/>
+  <rect x="160" y="84" width="74" height="18" rx="4" fill="var(--panel)"/>
+  <text x="197" y="97" text-anchor="middle" class="svg-edge" fill="var(--task)">_reserve()</text>
+
+  <!-- running self-loop (next phase) -->
+  <path d="M 294 82 C 294 42, 358 42, 358 78" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#sm-arr-accent)"/>
+  <rect x="242" y="18" width="168" height="18" rx="4" fill="var(--panel)"/>
+  <text x="326" y="31" text-anchor="middle" class="svg-edge" fill="var(--accent)">新 checkpoint（restarts=0）</text>
+
+  <!-- Crash recovery: running -> pending -->
+  <path d="M 248 128 C 206 168, 160 168, 114 146" fill="none" stroke="var(--bad)" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#sm-arr-bad)"/>
+  <rect x="108" y="168" width="174" height="18" rx="4" fill="var(--panel)"/>
+  <text x="195" y="181" text-anchor="middle" class="svg-edge" fill="var(--bad)">崩溃后 open()：restarts + 1</text>
+
+  <!-- running -> waiting/sleeping -->
+  <path d="M 404 90 L 500 38" fill="none" stroke="var(--task)" stroke-width="1.5" marker-end="url(#sm-arr-task)"/>
+  <rect x="406" y="42" width="76" height="18" rx="4" fill="var(--panel)"/>
+  <text x="444" y="55" text-anchor="middle" class="svg-edge" fill="var(--task)">等待 / 睡眠</text>
+
+  <!-- waiting/sleeping -> running (re-reserve) -->
+  <path d="M 504 58 L 408 102" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#sm-arr-accent)"/>
+  <rect x="424" y="72" width="84" height="18" rx="4" fill="var(--panel)"/>
+  <text x="466" y="85" text-anchor="middle" class="svg-edge" fill="var(--accent)">满足后再预留</text>
+
+  <!-- running -> terminal directly -->
+  <path d="M 404 114 L 752 114" fill="none" stroke="var(--ok)" stroke-width="1.6" marker-end="url(#sm-arr-ok)"/>
+  <rect x="518" y="93" width="154" height="18" rx="4" fill="var(--panel)"/>
+  <text x="595" y="106" text-anchor="middle" class="svg-edge" fill="var(--ok)">无活跃子工作 → 直接终结</text>
+
+  <!-- running -> completing -> terminal -->
+  <path d="M 404 130 L 500 166" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#sm-arr-accent)"/>
+  <path d="M 688 168 L 752 132" fill="none" stroke="var(--ok)" stroke-width="1.5" marker-end="url(#sm-arr-ok)"/>
+  <rect x="694" y="152" width="74" height="18" rx="4" fill="var(--panel)"/>
+  <text x="731" y="165" text-anchor="middle" class="svg-edge" fill="var(--ok)">子工作排空</text>
+
+  <!-- Abort note -->
+  <text x="460" y="216" text-anchor="middle" class="svg-footnote">中止协议：abort_requested=true 由 _reconcile() 向下级联；子工作全终结后，按 mode=&quot;abort&quot; 自下而上收尾为 terminal(aborted)</text>
+</svg></div>
+          </div>
         </details>
       </section>
       <section class="lesson-story" aria-labelledby="story-heading">
@@ -51,20 +267,20 @@
             <button type="button" data-act="mode" data-mode="quiz" id="mode-quiz">做练习</button>
           </div>
         </div>
-        <p class="figure-guide">虚线是组件调用。指向 DB 的实线是一批存储写入，点开可按表查看字段变化和写入的 JSON。</p>
+        <p class="figure-guide">虚线是组件调用，实线是一批原子 DB 写入。点击任意提交，可同时对照「全局状态」「运行时内存变化」和「SQLite 表字段变化」。</p>
         <div id="reading-guide"></div>
         <div id="quiz"></div>
         <div class="flow-shell">
           <div id="sequence-scroll" class="sequence-scroll" role="region" aria-label="组件调用及 DB 写入时序" tabindex="0"><div class="sequence-inner" id="seq"></div></div>
           <div class="sequence-inspector" id="step-detail"></div>
         </div>
-        <p class="source">数据来自 Python 教学版的一次运行，使用模拟模型和 MemoryStorage。DB 表示存储层。组件调用由代码和写入顺序还原，运行状态只在提交发布时采样。</p>
+        <p class="source">数据来自 Python 教学版 <code>pi-durable-py</code> 的真实运行录制（模拟模型 + MemoryStorage，全部 6 个场景的写入均已通过 SqliteStorage 重放校验）。运行状态在提交发布瞬间采样。</p>
       </section>
       <section class="lesson-source" id="source" aria-labelledby="source-heading">
         <h2 id="source-heading">将子会话的所有权写入 Conversation</h2>
         <p>这段代码只记录归属。本例在<a href="#timeline" data-act="article-step" data-q="8">第 8 次提交</a>写入 owner.conversation_id = 1 和 owner.task_id = 6，下一次提交才写子会话的输入和执行任务。</p>
         <figure class="code-sample">
-          <figcaption><a href="https://github.com/XingLiu0923/pi-durable-py/blob/7051583651d2053aea634a9970b3d3f05fd1b451/pi_durable/session.py#L246-L254">pi_durable/session.py:246</a></figcaption>
+          <figcaption><a href="https://github.com/XingLiu0923/pi-durable-py/blob/7051583651d2053aea634a9970b3d3f05fd1b451/pi_durable/session.py#L246-L254" target="_blank" rel="noopener">pi_durable/session.py:246 ↗</a></figcaption>
           <pre><code>async def create_conversation(self, owner_task_id: Optional[int] = None,
                               owner_conversation_id: Optional[int] = None,
                               id: Optional[int] = None) -&gt; Dict[str, Any]:
@@ -77,7 +293,24 @@
         </figure>
       </section>
       <section class="lesson-check" id="lesson-check" aria-label="检查理解"></section>
-      <nav class="lesson-footer" aria-label="继续学习"><a class="next-article" href="../"><small>回到第一篇</small><strong>一问一答 →</strong></a></nav>
+      <section class="lesson-practice" id="practice" aria-labelledby="practice-heading">
+        <h2 id="practice-heading">学完马上动手 · 对照本地代码与练习</h2>
+        <div class="practice-grid">
+          <div class="practice-card">
+            <strong>1. 运行本场景对应的完整示例</strong>
+            <p>跑一遍父子任务协作、failFast 和崩溃后保留睡眠定时器。</p>
+            <div class="practice-cmd">cd ~/Desktop/projects/pi-durable-py
+.venv/bin/python examples/05_child_tasks.py</div>
+          </div>
+          <div class="practice-card">
+            <strong>2. 动手实现核心模式：所有权树</strong>
+            <p>练习顺着 owner 边向上/向下遍历，决定中止流向与子工作排空判断。</p>
+            <div class="practice-cmd">cd ~/Desktop/projects/pi-durable-py
+.venv/bin/python exercises/ex6_ownership.py</div>
+          </div>
+        </div>
+      </section>
+      <nav class="lesson-footer" aria-label="继续学习"><a class="prev-article" href="../busy-inbox/"><small>上一篇</small><strong>← 忙时追问</strong></a><a class="next-article" data-next-article href="../crash-recovery/"><small>下一篇</small><strong>工具跑到一半进程崩溃，重开后怎样恢复 →</strong></a></nav>
     </article>
   </main>
 </body>
